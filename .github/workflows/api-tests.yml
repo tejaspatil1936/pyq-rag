@@ -1,0 +1,34 @@
+# Runs the API integration tests against the LIVE Neon database — the same
+# DATABASE_URL secret the ingestion pipeline writes to. Trigger manually
+# after backend changes. Analytics/DB tests always run; the one semantic
+# synthesis test additionally uses the reserved runtime Gemini key (the last
+# key in GEMINI_API_KEYS — the pipeline pool is never touched).
+name: API integration tests
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: api-tests
+  cancel-in-progress: false
+
+jobs:
+  test:
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Run integration tests
+        run: npm test
+        env:
+          DATABASE_URL: ${{ secrets.DATABASE_URL }}
+          GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
