@@ -86,6 +86,33 @@ describe.skipIf(!hasDb)("semantic search (live DB)", () => {
     expect(hits[0].similarity).toBeGreaterThan(0.9);
   });
 
+  it("top-k contains only distinct questions even where the corpus has duplicates", async () => {
+    // Find a question text that exists multiple times inside this subject
+    // (duplicate uploads guarantee thousands of these), search for it, and
+    // require the context window to hold k DIFFERENT questions.
+    const norm = (t: string) => t.toLowerCase().replace(/\s+/g, " ").trim();
+    const res = await getPool().query(
+      `SELECT q.question_text
+         FROM questions q
+         JOIN papers p ON p.id = q.paper_id
+        WHERE p.standard_subject = $1
+          AND length(q.question_text) BETWEEN 80 AND 300
+        GROUP BY q.question_text
+       HAVING COUNT(*) > 1
+        ORDER BY COUNT(*) DESC
+        LIMIT 1`,
+      [subject],
+    );
+    expect(res.rows.length).toBe(1); // the corpus is known to contain duplicates
+    const probe = res.rows[0].question_text as string;
+
+    const hits = await semanticSearch(subject, await embedQuery(probe), 10);
+    expect(hits.length).toBe(10);
+    const normalized = hits.map((h) => norm(h.question_text));
+    expect(new Set(normalized).size).toBe(10); // no duplicate slots
+    expect(normalized[0]).toBe(norm(probe)); // the duplicate collapsed to one top hit
+  });
+
   it("an unknown subject returns zero rows, never cross-subject leakage", async () => {
     const vec = await embedQuery("anything at all");
     expect(await semanticSearch("__no_such_subject__", vec, 10)).toEqual([]);

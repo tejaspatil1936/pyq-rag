@@ -15,42 +15,50 @@ export interface SearchHit {
 }
 
 /**
- * Subject-scoped pgvector similarity search.
+ * Subject-scoped pgvector similarity search returning k DISTINCT questions.
  *
  * Subject isolation is the WHERE clause on papers.standard_subject — SQL,
  * applied before vector ordering, never left to the LLM (see CLAUDE.md).
+ *
+ * The corpus contains many verbatim duplicates (the same exam uploaded
+ * multiple times, and questions legitimately repeated across exams), so the
+ * top-k is deduplicated on whitespace/case-normalized question_text — the
+ * synthesis context gets k different questions, not one question k times.
+ * DISTINCT ON forgoes the ANN index, but the subject filter bounds the scan
+ * to a few thousand rows, which Postgres handles in milliseconds.
  */
 export async function semanticSearch(
   subject: string,
   queryVec: number[],
   limit = 10,
 ): Promise<SearchHit[]> {
-  const client = await getPool().connect();
-  try {
-    // The ivfflat index probes 1 list by default; with a subject filter on
-    // top, that starves recall. 10 probes is still fast at this corpus size.
-    await client.query("SET ivfflat.probes = 10");
-    const res = await client.query(
-      `SELECT q.id AS question_id,
-              q.question_text,
-              q.marks,
-              q.sub_label,
-              p.file_name,
-              p.year,
-              p.exam_type,
-              p.url,
-              p.standard_subject,
-              1 - (q.embedding <=> $1::vector) AS similarity
-         FROM questions q
-         JOIN papers p ON p.id = q.paper_id
-        WHERE p.standard_subject = $2
-          AND q.embedding IS NOT NULL
-        ORDER BY q.embedding <=> $1::vector
-        LIMIT $3`,
-      [toVectorLiteral(queryVec), subject, limit],
-    );
-    return res.rows as SearchHit[];
-  } finally {
-    client.release();
-  }
+  const res = await getPool().query(
+    `SELECT question_id, question_text, marks, sub_label,
+            file_name, year, exam_type, url, standard_subject, similarity
+       FROM (
+         SELECT DISTINCT ON (norm_text) *
+           FROM (
+             SELECT q.id AS question_id,
+                    q.question_text,
+                    q.marks,
+                    q.sub_label,
+                    p.file_name,
+                    p.year,
+                    p.exam_type,
+                    p.url,
+                    p.standard_subject,
+                    1 - (q.embedding <=> $1::vector) AS similarity,
+                    lower(regexp_replace(q.question_text, '\\s+', ' ', 'g')) AS norm_text
+               FROM questions q
+               JOIN papers p ON p.id = q.paper_id
+              WHERE p.standard_subject = $2
+                AND q.embedding IS NOT NULL
+           ) scored
+          ORDER BY norm_text, similarity DESC
+       ) deduped
+      ORDER BY similarity DESC
+      LIMIT $3`,
+    [toVectorLiteral(queryVec), subject, limit],
+  );
+  return res.rows as SearchHit[];
 }
