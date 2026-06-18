@@ -13,14 +13,20 @@
     "next": "^15",
     "pg": "^8",
     "react": "^19",
-    "react-dom": "^19"
+    "react-dom": "^19",
+    "react-markdown": "^10.1.0",
+    "remark-gfm": "^4.0.1"
   },
   "devDependencies": {
+    "@tailwindcss/postcss": "^4.3.3",
+    "@tailwindcss/typography": "^0.5.20",
     "@types/node": "^22",
     "@types/pg": "^8",
     "@types/react": "^19",
     "@types/react-dom": "^19",
     "dotenv": "^16",
+    "postcss": "^8.5.19",
+    "tailwindcss": "^4.3.3",
     "typescript": "^5",
     "vitest": "^3"
   }

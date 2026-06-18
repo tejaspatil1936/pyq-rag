@@ -1,0 +1,16 @@
+@import "tailwindcss";
+@plugin "@tailwindcss/typography";
+
+/* Brief flash when a [n] marker jumps to its citation card. */
+@keyframes cite-flash {
+  0% {
+    background-color: var(--color-indigo-100);
+  }
+  100% {
+    background-color: transparent;
+  }
+}
+
+.cite-flash {
+  animation: cite-flash 1.6s ease-out;
+}
