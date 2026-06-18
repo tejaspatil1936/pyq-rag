@@ -5,10 +5,30 @@ import { toVectorLiteral } from "./embed";
 export interface ClusterRow {
   cluster_id: number;
   representative_text: string;
+  /** Raw extracted-question members (may include duplicate uploads). */
   question_count: number;
-  papers_count: number;
+  /** Distinct exam sittings the cluster's question appeared in — the honest
+   *  frequency number shown to students. */
+  exam_count: number;
   years_spanned: string | null;
 }
+
+/**
+ * One exam sitting is often uploaded several times ("... (2).pdf", filename
+ * typos), which would inflate every frequency count. An exam is therefore
+ * identified as (standard_subject, year, exam session, exam_type, semester,
+ * branch); the session month exists only inside file_name ("_APR 2024",
+ * "APRIL2024", "Dec 2023"), matched as a month token directly followed by a
+ * year so subject words like "Marketing" can't false-positive.
+ *
+ * Dedup happens at QUERY TIME rather than by migrating clusters counts:
+ * stored counts stay raw, the Python pipeline needs no lock-step change, and
+ * the numbers stay correct automatically after every future ingest/cluster
+ * rerun. The aggregate spans a single subject's questions (~2k rows) — cheap.
+ */
+const EXAM_SESSION_SQL = `COALESCE(substring(upper(p.file_name) from '(JAN|FEB|MAR|APR|MAY|JUN|JUL|AUG|SEP|OCT|NOV|DEC)[A-Z]*[ ._-]*[0-9]{2,4}'), '')`;
+
+export const EXAM_KEY_SQL = `(p.standard_subject, COALESCE(p.year, ''), ${EXAM_SESSION_SQL}, COALESCE(p.exam_type, ''), COALESCE(p.semester, ''), COALESCE(p.branch, ''))`;
 
 export interface PaperSource {
   file_name: string;
@@ -19,18 +39,21 @@ export interface PaperSource {
 
 /**
  * Ranked "most frequently asked" clusters for one subject — real SQL counts
- * produced by the clustering step, never LLM guesses (see CLAUDE.md).
+ * over DISTINCT exams, never LLM guesses (see CLAUDE.md).
  */
 export async function topClusters(subject: string, limit = 10): Promise<ClusterRow[]> {
   const res = await getPool().query(
-    `SELECT id AS cluster_id,
-            representative_text,
-            question_count::int AS question_count,
-            papers_count::int AS papers_count,
-            years_spanned
-       FROM clusters
-      WHERE standard_subject = $1
-      ORDER BY question_count DESC, papers_count DESC, id
+    `SELECT c.id AS cluster_id,
+            c.representative_text,
+            c.question_count::int AS question_count,
+            COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
+            c.years_spanned
+       FROM clusters c
+       JOIN questions q ON q.cluster_id = c.id
+       JOIN papers p ON p.id = q.paper_id
+      WHERE c.standard_subject = $1
+      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
+      ORDER BY exam_count DESC, c.question_count DESC, c.id
       LIMIT $2`,
     [subject, limit],
   );
@@ -58,16 +81,17 @@ export async function topicClusters(
     `SELECT c.id AS cluster_id,
             c.representative_text,
             c.question_count::int AS question_count,
-            c.papers_count::int AS papers_count,
+            COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
             c.years_spanned,
             1 - (AVG(q.embedding) <=> $1::vector) AS topic_similarity
        FROM clusters c
        JOIN questions q ON q.cluster_id = c.id
+       JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $2
         AND q.embedding IS NOT NULL
-      GROUP BY c.id, c.representative_text, c.question_count, c.papers_count, c.years_spanned
+      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
      HAVING 1 - (AVG(q.embedding) <=> $1::vector) >= $3
-      ORDER BY c.question_count DESC, topic_similarity DESC, c.id
+      ORDER BY exam_count DESC, topic_similarity DESC, c.id
       LIMIT $4`,
     [toVectorLiteral(topicVec), subject, TOPIC_MATCH_THRESHOLD, limit],
   );

@@ -13,7 +13,7 @@ export function formatAnalyticsAnswer(
   sources: Map<number, PaperSource[]>,
 ): string {
   return formatClusterList(
-    `**Most frequently asked questions in ${subject}** (real counts from clustered papers):`,
+    `**Most frequently asked questions in ${subject}** (counted over distinct exams; repeated uploads of the same paper count once):`,
     clusters,
     sources,
   );
@@ -45,7 +45,7 @@ function formatClusterList(
         ? `${c.representative_text.slice(0, 220)}…`
         : c.representative_text;
     lines.push(
-      `${i + 1}. "${text}" — asked **${c.question_count}×** across ${c.papers_count} paper(s)${formatYears(c.years_spanned)}`,
+      `${i + 1}. "${text}" — asked in **${c.exam_count}** exam${c.exam_count === 1 ? "" : "s"}${formatYears(c.years_spanned)}`,
     );
     const src = sources.get(c.cluster_id) ?? [];
     if (src.length > 0) {

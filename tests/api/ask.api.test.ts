@@ -15,6 +15,7 @@ interface AskResponse {
   clusters?: {
     representative_text: string;
     question_count: number;
+    exam_count: number;
     topic_similarity?: number;
     sources: { url: string; file_name: string }[];
   }[];
@@ -64,12 +65,14 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     const clusters = body.clusters ?? [];
     expect(clusters.length).toBeGreaterThan(0);
     for (let i = 0; i < clusters.length; i++) {
-      expect(clusters[i].question_count).toBeGreaterThanOrEqual(1);
+      expect(clusters[i].exam_count).toBeGreaterThanOrEqual(1);
+      // distinct exams can never exceed raw extracted members
+      expect(clusters[i].exam_count).toBeLessThanOrEqual(clusters[i].question_count);
       if (i > 0) {
-        expect(clusters[i].question_count).toBeLessThanOrEqual(clusters[i - 1].question_count);
+        expect(clusters[i].exam_count).toBeLessThanOrEqual(clusters[i - 1].exam_count);
       }
     }
-    expect(body.answer).toContain(`${clusters[0].question_count}×`);
+    expect(body.answer).toContain(`**${clusters[0].exam_count}** exam`);
     expect(clusters[0].sources.length).toBeGreaterThan(0);
     for (const s of clusters[0].sources) expect(s.url).toMatch(/^https?:\/\//);
   });
@@ -89,9 +92,9 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     const hashy = clusters.filter((c) => /hash/i.test(c.representative_text));
     expect(hashy.length).toBeGreaterThan(0);
     expect(hashy.length).toBeGreaterThanOrEqual(clusters.length / 2);
-    // ranked by real frequency, not similarity
+    // ranked by real distinct-exam frequency, not similarity
     for (let i = 1; i < clusters.length; i++) {
-      expect(clusters[i].question_count).toBeLessThanOrEqual(clusters[i - 1].question_count);
+      expect(clusters[i].exam_count).toBeLessThanOrEqual(clusters[i - 1].exam_count);
     }
   });
 

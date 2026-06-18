@@ -45,8 +45,8 @@ describe.skipIf(!hasDb)("POST /api/ask (live DB)", () => {
     expect(body.intent).toBe("ANALYTICS");
     expect(body.clusters.length).toBeGreaterThan(0);
     expect(body.answer).toContain("Most frequently asked");
-    // counts in the answer come straight from SQL rows
-    expect(body.answer).toContain(`${body.clusters[0].question_count}×`);
+    // counts in the answer come straight from SQL rows (distinct exams)
+    expect(body.answer).toContain(`**${body.clusters[0].exam_count}** exam`);
     expect(body.clusters[0].sources.length).toBeGreaterThan(0);
   });
 
