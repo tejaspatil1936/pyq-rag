@@ -1,7 +1,7 @@
 import path from "node:path";
 import { fileURLToPath } from "node:url";
 
-import { defineConfig } from "vitest/config";
+import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
   resolve: {
@@ -9,6 +9,8 @@ export default defineConfig({
     alias: { "@": path.dirname(fileURLToPath(import.meta.url)) },
   },
   test: {
+    // tests/api is the black-box suite against a running server (test:api).
+    exclude: [...configDefaults.exclude, "tests/api/**"],
     setupFiles: ["tests/setup.ts"],
     // First embedding test downloads the ONNX model (~23 MB); DB tests cross
     // the ocean to Neon. Generous timeouts keep CI stable.

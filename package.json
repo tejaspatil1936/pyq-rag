@@ -5,7 +5,8 @@
     "dev": "next dev",
     "build": "next build",
     "start": "next start",
-    "test": "vitest run"
+    "test": "vitest run",
+    "test:api": "vitest run --config vitest.api.config.ts"
   },
   "dependencies": {
     "@huggingface/transformers": "^3",
