@@ -134,6 +134,22 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     }
   });
 
+  it("SEMANTIC: admits non-coverage instead of answering from general knowledge", async () => {
+    // AVL rotations are Data Structures material; Thermal Engineering's
+    // retrieved questions cannot support an answer, and the model surely
+    // knows AVL trees from pretraining — the grounded prompt must refuse.
+    const subject = findSubject(/^thermal engineering$/i);
+    const { status, body } = await ask({
+      subject,
+      question: "Explain AVL tree rotations with an example.",
+    });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("SEMANTIC");
+    expect(body.answer).toMatch(/don'?t cover|do not cover/i);
+    // and no smuggled explanation of the actual mechanics
+    expect(body.answer).not.toMatch(/left rotation|right rotation|balance factor/i);
+  });
+
   it("unknown subject → 404", async () => {
     const { status, body } = await ask({
       subject: "__no_such_subject__",

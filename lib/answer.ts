@@ -89,9 +89,11 @@ ${excerpts}
 Student's question: ${question}
 
 Rules:
+- Use ONLY the excerpts. Never add facts, definitions, or explanations from your general knowledge, even when you know the answer — an unsupported claim is worse than no answer.
 - Ground every claim in the excerpts and cite them inline like [1] or [2][5].
 - Never invent questions, frequencies, years, or marks that are not in the excerpts.
-- If the excerpts are not relevant to the question, say so plainly instead of guessing.
+- If the excerpts do not cover the student's question, begin your reply with exactly: "The retrieved previous-year questions don't cover this topic." You may then briefly say what the excerpts DO contain (with citations), but do not answer the original question from outside knowledge.
+- If the excerpts cover only part of the question, answer that part only and state plainly what is not covered.
 - Answer in concise markdown.`;
 
   return generateText(prompt, { timeoutMs: 45_000 });
