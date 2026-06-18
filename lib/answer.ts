@@ -12,7 +12,33 @@ export function formatAnalyticsAnswer(
   clusters: ClusterRow[],
   sources: Map<number, PaperSource[]>,
 ): string {
-  const lines = [`**Most frequently asked questions in ${subject}** (real counts from clustered papers):`, ""];
+  return formatClusterList(
+    `**Most frequently asked questions in ${subject}** (real counts from clustered papers):`,
+    clusters,
+    sources,
+  );
+}
+
+/** TOPIC_ANALYTICS heading; the ranked list itself is identical machinery. */
+export function formatTopicAnalyticsAnswer(
+  subject: string,
+  topic: string,
+  clusters: ClusterRow[],
+  sources: Map<number, PaperSource[]>,
+): string {
+  return formatClusterList(
+    `**Questions about "${topic}" in ${subject}** (${clusters.length} matching cluster${clusters.length === 1 ? "" : "s"}, ranked by how often they were asked):`,
+    clusters,
+    sources,
+  );
+}
+
+function formatClusterList(
+  heading: string,
+  clusters: ClusterRow[],
+  sources: Map<number, PaperSource[]>,
+): string {
+  const lines = [heading, ""];
   clusters.forEach((c, i) => {
     const text =
       c.representative_text.length > 220

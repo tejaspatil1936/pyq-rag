@@ -1,7 +1,11 @@
 import { NextResponse } from "next/server";
 
-import { clusterSources, topClusters } from "@/lib/analytics";
-import { formatAnalyticsAnswer, synthesizeAnswer } from "@/lib/answer";
+import { clusterSources, topClusters, topicClusters } from "@/lib/analytics";
+import {
+  formatAnalyticsAnswer,
+  formatTopicAnalyticsAnswer,
+  synthesizeAnswer,
+} from "@/lib/answer";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent } from "@/lib/intent";
@@ -42,7 +46,7 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `unknown subject: ${subject}` }, { status: 404 });
     }
 
-    const intent = await classifyIntent(question);
+    const { intent, topic } = await classifyIntent(question);
 
     if (intent === "ANALYTICS") {
       const clusters = await topClusters(subject, TOP_K);
@@ -57,6 +61,29 @@ export async function POST(req: Request) {
       return NextResponse.json({
         intent,
         answer: formatAnalyticsAnswer(subject, clusters, sources),
+        clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+      });
+    }
+
+    if (intent === "TOPIC_ANALYTICS") {
+      // Topic-scoped frequency: embed the topic phrase, match this subject's
+      // clusters by centroid similarity, rank by real question_count.
+      const topicPhrase = topic ?? question;
+      const topicVec = await embedQuery(topicPhrase);
+      const clusters = await topicClusters(subject, topicVec, TOP_K);
+      if (clusters.length === 0) {
+        return NextResponse.json({
+          intent,
+          topic: topicPhrase,
+          answer: `No question clusters about **${topicPhrase}** found in **${subject}**. Either it isn't asked in this subject's papers, or the phrasing differs — try an open-ended question instead.`,
+          clusters: [],
+        });
+      }
+      const sources = await clusterSources(clusters.map((c) => c.cluster_id));
+      return NextResponse.json({
+        intent,
+        topic: topicPhrase,
+        answer: formatTopicAnalyticsAnswer(subject, topicPhrase, clusters, sources),
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
       });
     }
@@ -86,6 +113,7 @@ export async function POST(req: Request) {
         year: h.year,
         exam_type: h.exam_type,
         url: h.url,
+        standard_subject: h.standard_subject,
         similarity: h.similarity,
       })),
     });
