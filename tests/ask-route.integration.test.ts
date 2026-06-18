@@ -50,16 +50,21 @@ describe.skipIf(!hasDb)("POST /api/ask (live DB)", () => {
     expect(body.clusters[0].sources.length).toBeGreaterThan(0);
   });
 
-  it.skipIf(!hasGemini)("answers a semantic question with citations", async () => {
-    const res = await ask({ subject, question: "What topics do the exam questions focus on?" });
+  it.skipIf(!hasGemini)("answers a semantic question with [n]-cited sources", async () => {
+    const res = await ask({
+      subject,
+      question: "Explain what the examiners expect in a good answer here.",
+    });
     expect(res.status).toBe(200);
     const body = await res.json();
     expect(body.intent).toBe("SEMANTIC");
     expect(body.answer.length).toBeGreaterThan(0);
+    expect(body.answer).toMatch(/\[\d+\]/); // inline citation markers
     expect(body.citations.length).toBeGreaterThan(0);
     expect(body.citations.length).toBeLessThanOrEqual(10);
     for (const c of body.citations) {
       expect(c.url).toMatch(/^https?:\/\//);
+      expect(c.standard_subject).toBe(subject);
     }
   });
 });
