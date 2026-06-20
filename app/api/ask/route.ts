@@ -7,10 +7,12 @@ import {
   guardOutput,
   synthesizeAnswer,
 } from "@/lib/answer";
+import { cacheGet, cacheKey, cacheSet } from "@/lib/cache";
 import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent, type HistoryTurn } from "@/lib/intent";
+import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
 import { prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
@@ -72,6 +74,28 @@ export async function POST(req: Request) {
     );
   }
 
+  const client = rateKey(ipFromHeaders(req.headers));
+  if (!consume(`total:${client}`, totalLimit())) {
+    return NextResponse.json(
+      { error: "That's a lot of questions this hour — take a short break and try again." },
+      { status: 429 },
+    );
+  }
+
+  // Cache before any other work; multi-turn requests are context-dependent
+  // and skip it.
+  const key = cacheKey(subject, question);
+  if (history.length === 0) {
+    const hit = cacheGet(key);
+    if (hit) return NextResponse.json({ ...hit, cached: true });
+  }
+
+  // Successful history-free responses land in the cache on the way out.
+  const respond = (body: Record<string, unknown>, cacheable = true) => {
+    if (cacheable && history.length === 0) cacheSet(key, body);
+    return NextResponse.json(body);
+  };
+
   try {
     if (!(await subjectExists(subject))) {
       return NextResponse.json({ error: `unknown subject: ${subject}` }, { status: 404 });
@@ -79,7 +103,7 @@ export async function POST(req: Request) {
 
     // Scope gate layer 0: obvious abuse dies here for free, before Gemini.
     if (prefilterAbuse(question)) {
-      return NextResponse.json({ intent: "REFUSED", answer: refusalMessage(subject) });
+      return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
     }
 
     // Scope gate layer 1 rides along in the intent-classification call; the
@@ -89,20 +113,20 @@ export async function POST(req: Request) {
       history,
     });
     if (!inScope) {
-      return NextResponse.json({ intent: "REFUSED", answer: refusalMessage(subject) });
+      return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
     }
 
     if (intent === "ANALYTICS") {
       const clusters = await topClusters(subject, TOP_K);
       if (clusters.length === 0) {
-        return NextResponse.json({
+        return respond({
           intent,
           answer: `No clustered questions for **${subject}** yet — the pipeline may still be processing this subject.`,
           clusters: [],
         });
       }
       const sources = await clusterSources(clusters.map((c) => c.cluster_id));
-      return NextResponse.json({
+      return respond({
         intent,
         answer: formatAnalyticsAnswer(subject, clusters, sources),
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
@@ -116,7 +140,7 @@ export async function POST(req: Request) {
       const topicVec = await embedQuery(topicPhrase);
       const clusters = await topicClusters(subject, topicVec, TOP_K);
       if (clusters.length === 0) {
-        return NextResponse.json({
+        return respond({
           intent,
           topic: topicPhrase,
           answer: `No question clusters about **${topicPhrase}** found in **${subject}**. Either it isn't asked in this subject's papers, or the phrasing differs — try an open-ended question instead.`,
@@ -124,7 +148,7 @@ export async function POST(req: Request) {
         });
       }
       const sources = await clusterSources(clusters.map((c) => c.cluster_id));
-      return NextResponse.json({
+      return respond({
         intent,
         topic: topicPhrase,
         answer: formatTopicAnalyticsAnswer(subject, topicPhrase, clusters, sources),
@@ -147,7 +171,7 @@ export async function POST(req: Request) {
         (c) =>
           `- ${c.representative_text.length > 120 ? `${c.representative_text.slice(0, 120)}…` : c.representative_text}`,
       );
-      return NextResponse.json({
+      return respond({
         intent,
         answer:
           `The previous-year papers for **${subject}** don't cover this specifically.` +
@@ -159,27 +183,54 @@ export async function POST(req: Request) {
       });
     }
 
-    const raw = await synthesizeAnswer(subject, question, grounded, history);
+    const citations = grounded.map((h, i) => ({
+      ref: i + 1,
+      question_text: h.question_text,
+      marks: h.marks,
+      sub_label: h.sub_label,
+      file_name: h.file_name,
+      year: h.year,
+      exam_type: h.exam_type,
+      url: h.url,
+      standard_subject: h.standard_subject,
+      similarity: h.similarity,
+    }));
+
+    // Synthesis is the only expensive Gemini call — it gets the strict cap.
+    if (!consume(`synth:${client}`, synthLimit())) {
+      return NextResponse.json(
+        {
+          error:
+            "You've used this hour's AI answers. Frequency analytics still work — or try again in a bit.",
+        },
+        { status: 429 },
+      );
+    }
+
+    let raw: string;
+    try {
+      raw = await synthesizeAnswer(subject, question, grounded, history);
+    } catch (err) {
+      if (err instanceof GeminiUnavailable) {
+        // Quota exhausted: never go dark — hand over raw retrieval instead.
+        return respond(
+          {
+            intent,
+            answer:
+              "AI answers are resting until tomorrow — here are the most relevant past questions instead.",
+            citations,
+            degraded: true,
+          },
+          false, // don't cache the degraded shape past the outage
+        );
+      }
+      throw err;
+    }
     const guarded = guardOutput(raw, subject, question);
     if (guarded.flagged) {
-      return NextResponse.json({ intent: "REFUSED", answer: guarded.answer });
+      return respond({ intent: "REFUSED", answer: guarded.answer });
     }
-    return NextResponse.json({
-      intent,
-      answer: guarded.answer,
-      citations: grounded.map((h, i) => ({
-        ref: i + 1,
-        question_text: h.question_text,
-        marks: h.marks,
-        sub_label: h.sub_label,
-        file_name: h.file_name,
-        year: h.year,
-        exam_type: h.exam_type,
-        url: h.url,
-        standard_subject: h.standard_subject,
-        similarity: h.similarity,
-      })),
-    });
+    return respond({ intent, answer: guarded.answer, citations });
   } catch (err) {
     if (err instanceof GeminiUnavailable) {
       return NextResponse.json({ error: err.message }, { status: 503 });
