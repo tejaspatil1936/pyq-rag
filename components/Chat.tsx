@@ -39,13 +39,24 @@ export default function Chat({
     const q = question.trim();
     if (!q || loading) return;
     setInput("");
+    // Last few turns as plain text so the server can resolve follow-ups
+    // ("explain the second one"); the server enforces its own caps.
+    const history = messages
+      .flatMap((m): { role: "user" | "assistant"; content: string }[] =>
+        m.role === "user"
+          ? [{ role: "user", content: m.text }]
+          : m.role === "assistant"
+            ? [{ role: "assistant", content: m.res.answer }]
+            : [],
+      )
+      .slice(-6);
     setMessages((m) => [...m, { id: nextId.current++, role: "user", text: q }]);
     setLoading(true);
     try {
       const res = await fetch("/api/ask", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({ subject, question: q }),
+        body: JSON.stringify({ subject, question: q, history }),
       });
       const body = (await res.json()) as AskResponse & { error?: string };
       if (!res.ok) {
@@ -80,13 +91,24 @@ export default function Chat({
               </p>
             )}
           </div>
-          <button
-            type="button"
-            onClick={onChangeSubject}
-            className="shrink-0 rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
-          >
-            Change subject
-          </button>
+          <div className="flex shrink-0 gap-2">
+            {messages.length > 0 && (
+              <button
+                type="button"
+                onClick={() => setMessages([])}
+                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              >
+                New chat
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={onChangeSubject}
+              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+            >
+              Change subject
+            </button>
+          </div>
         </div>
       </header>
 
