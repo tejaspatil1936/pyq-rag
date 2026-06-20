@@ -7,6 +7,7 @@ import {
   guardOutput,
   synthesizeAnswer,
 } from "@/lib/answer";
+import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent } from "@/lib/intent";
@@ -103,15 +104,28 @@ export async function POST(req: Request) {
     // subject in SQL — the LLM only ever sees same-subject questions.
     const queryVec = await embedQuery(question);
     const hits = await semanticSearch(subject, queryVec, TOP_K);
-    if (hits.length === 0) {
+
+    // Grounding floor: without enough genuinely similar questions, honesty
+    // beats synthesis — say so and suggest what the papers DO cover.
+    const grounded = hits.filter((h) => h.similarity >= SEMANTIC_MIN_SIMILARITY);
+    if (grounded.length < MIN_GROUNDING_HITS) {
+      const suggestions = (await topClusters(subject, 3)).map(
+        (c) =>
+          `- ${c.representative_text.length > 120 ? `${c.representative_text.slice(0, 120)}…` : c.representative_text}`,
+      );
       return NextResponse.json({
         intent,
-        answer: `No embedded questions found for **${subject}** yet.`,
+        answer:
+          `The previous-year papers for **${subject}** don't cover this specifically.` +
+          (suggestions.length > 0
+            ? `\n\nTopics the papers do ask about:\n${suggestions.join("\n")}`
+            : ""),
         citations: [],
+        no_answer: true,
       });
     }
 
-    const raw = await synthesizeAnswer(subject, question, hits);
+    const raw = await synthesizeAnswer(subject, question, grounded);
     const guarded = guardOutput(raw, subject, question);
     if (guarded.flagged) {
       return NextResponse.json({ intent: "REFUSED", answer: guarded.answer });
@@ -119,7 +133,7 @@ export async function POST(req: Request) {
     return NextResponse.json({
       intent,
       answer: guarded.answer,
-      citations: hits.map((h, i) => ({
+      citations: grounded.map((h, i) => ({
         ref: i + 1,
         question_text: h.question_text,
         marks: h.marks,
