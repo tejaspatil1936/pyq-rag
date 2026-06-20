@@ -4,6 +4,7 @@ import { clusterSources, topClusters, topicClusters } from "@/lib/analytics";
 import {
   formatAnalyticsAnswer,
   formatTopicAnalyticsAnswer,
+  guardOutput,
   synthesizeAnswer,
 } from "@/lib/answer";
 import { embedQuery } from "@/lib/embed";
@@ -110,10 +111,14 @@ export async function POST(req: Request) {
       });
     }
 
-    const answer = await synthesizeAnswer(subject, question, hits);
+    const raw = await synthesizeAnswer(subject, question, hits);
+    const guarded = guardOutput(raw, subject, question);
+    if (guarded.flagged) {
+      return NextResponse.json({ intent: "REFUSED", answer: guarded.answer });
+    }
     return NextResponse.json({
       intent,
-      answer,
+      answer: guarded.answer,
       citations: hits.map((h, i) => ({
         ref: i + 1,
         question_text: h.question_text,
