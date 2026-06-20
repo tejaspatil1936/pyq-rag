@@ -13,6 +13,7 @@ import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent, type HistoryTurn } from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
+import { logEvent } from "@/lib/obs";
 import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
 import { prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
@@ -76,8 +77,23 @@ export async function POST(req: Request) {
     );
   }
 
+  const t0 = Date.now();
   const client = rateKey(ipFromHeaders(req.headers));
+
+  // One line per query; `client` is a salted hash, never an IP.
+  const logAsk = (fields: Record<string, unknown>) =>
+    logEvent({
+      evt: "ask",
+      subject,
+      client,
+      question: question.slice(0, 300),
+      turns: history.length,
+      latency_ms: Date.now() - t0,
+      ...fields,
+    });
+
   if (!consume(`total:${client}`, totalLimit())) {
+    logAsk({ status: 429, limited: "total" });
     return NextResponse.json(
       { error: "That's a lot of questions this hour — take a short break and try again." },
       { status: 429 },
@@ -89,12 +105,23 @@ export async function POST(req: Request) {
   const key = cacheKey(subject, question);
   if (history.length === 0) {
     const hit = cacheGet(key);
-    if (hit) return NextResponse.json({ ...hit, cached: true });
+    if (hit) {
+      logAsk({ status: 200, intent: hit.intent, cache_hit: true });
+      return NextResponse.json({ ...hit, cached: true });
+    }
   }
 
   // Successful history-free responses land in the cache on the way out.
   const respond = (body: Record<string, unknown>, cacheable = true) => {
     if (cacheable && history.length === 0) cacheSet(key, body);
+    logAsk({
+      status: 200,
+      intent: body.intent,
+      in_scope: body.intent !== "REFUSED",
+      cache_hit: false,
+      no_answer: body.no_answer === true,
+      degraded: body.degraded === true,
+    });
     return NextResponse.json(body);
   };
 
@@ -200,6 +227,7 @@ export async function POST(req: Request) {
 
     // Synthesis is the only expensive Gemini call — it gets the strict cap.
     if (!consume(`synth:${client}`, synthLimit())) {
+      logAsk({ status: 429, limited: "synth" });
       return NextResponse.json(
         {
           error:
@@ -235,9 +263,11 @@ export async function POST(req: Request) {
     return respond({ intent, answer: guarded.answer, citations });
   } catch (err) {
     if (err instanceof GeminiUnavailable) {
+      logAsk({ status: 503 });
       return NextResponse.json({ error: err.message }, { status: 503 });
     }
     console.error("POST /api/ask failed:", err);
+    logAsk({ status: 500 });
     return NextResponse.json({ error: "internal error" }, { status: 500 });
   }
 }
