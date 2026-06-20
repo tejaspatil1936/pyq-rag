@@ -10,7 +10,7 @@ import {
 import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
-import { classifyIntent } from "@/lib/intent";
+import { classifyIntent, type HistoryTurn } from "@/lib/intent";
 import { prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
@@ -23,6 +23,29 @@ export const maxDuration = 60;
 const MAX_QUESTION_LEN = 1000;
 const TOP_K = 10;
 
+// Multi-turn caps — the server never trusts the client's history size.
+const MAX_HISTORY_TURNS = 6;
+const MAX_TURN_CHARS = 1200;
+const MAX_HISTORY_CHARS = 6000;
+
+/** Coerce untrusted history into ≤6 truncated turns under a total char cap. */
+function sanitizeHistory(raw: unknown): HistoryTurn[] {
+  if (!Array.isArray(raw)) return [];
+  const turns: HistoryTurn[] = [];
+  for (const item of raw) {
+    const role = (item as { role?: unknown })?.role;
+    const content = String((item as { content?: unknown })?.content ?? "").trim();
+    if ((role === "user" || role === "assistant") && content) {
+      turns.push({ role, content: content.slice(0, MAX_TURN_CHARS) });
+    }
+  }
+  let kept = turns.slice(-MAX_HISTORY_TURNS);
+  while (kept.length > 0 && kept.reduce((s, t) => s + t.content.length, 0) > MAX_HISTORY_CHARS) {
+    kept = kept.slice(1); // drop oldest first
+  }
+  return kept;
+}
+
 export async function POST(req: Request) {
   let body: unknown;
   try {
@@ -31,9 +54,14 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "body must be JSON" }, { status: 400 });
   }
 
-  const { subject: rawSubject, question: rawQuestion } = (body ?? {}) as Record<string, unknown>;
+  const {
+    subject: rawSubject,
+    question: rawQuestion,
+    history: rawHistory,
+  } = (body ?? {}) as Record<string, unknown>;
   const subject = String(rawSubject ?? "").trim();
   const question = String(rawQuestion ?? "").trim();
+  const history = sanitizeHistory(rawHistory);
   if (!subject || !question) {
     return NextResponse.json({ error: "subject and question are required" }, { status: 400 });
   }
@@ -54,8 +82,12 @@ export async function POST(req: Request) {
       return NextResponse.json({ intent: "REFUSED", answer: refusalMessage(subject) });
     }
 
-    // Scope gate layer 1 rides along in the intent-classification call.
-    const { inScope, intent, topic } = await classifyIntent(question, { subject });
+    // Scope gate layer 1 rides along in the intent-classification call; the
+    // history lets it resolve follow-ups like "explain the second one".
+    const { inScope, intent, topic, rewritten } = await classifyIntent(question, {
+      subject,
+      history,
+    });
     if (!inScope) {
       return NextResponse.json({ intent: "REFUSED", answer: refusalMessage(subject) });
     }
@@ -101,8 +133,10 @@ export async function POST(req: Request) {
     }
 
     // SEMANTIC: embed the query, then pgvector search *already* scoped to the
-    // subject in SQL — the LLM only ever sees same-subject questions.
-    const queryVec = await embedQuery(question);
+    // subject in SQL — the LLM only ever sees same-subject questions. The
+    // classifier's standalone rewrite makes follow-ups searchable.
+    const searchQuery = rewritten ?? question;
+    const queryVec = await embedQuery(searchQuery);
     const hits = await semanticSearch(subject, queryVec, TOP_K);
 
     // Grounding floor: without enough genuinely similar questions, honesty
@@ -125,7 +159,7 @@ export async function POST(req: Request) {
       });
     }
 
-    const raw = await synthesizeAnswer(subject, question, grounded);
+    const raw = await synthesizeAnswer(subject, question, grounded, history);
     const guarded = guardOutput(raw, subject, question);
     if (guarded.flagged) {
       return NextResponse.json({ intent: "REFUSED", answer: guarded.answer });
