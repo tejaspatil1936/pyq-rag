@@ -51,7 +51,7 @@ const EXPLAIN_OPENER =
   /^(?:explain|define|derive|describe|compare|differentiate|discuss|solve|state|prove|why\b|what\s+is\b|what\s+are\b|how\s+(?:do|does|would|can|to)\b)/i;
 
 const FREQUENCY =
-  /most\s+(?:frequent(?:ly)?|repeated|common(?:ly)?|asked|important)|frequently\s+asked|how\s+(?:often|many\s+times)|repeated\s+questions?|weightage|year[-\s]?wise|trend|usually|gets?\s+asked|come(?:s)?\s+up|appears?\b|kitni\s+baar|sabse\s+(?:zyada|jyada)|baar\s+baar|(?:pucha|poocha)\s+(?:jata|jaata|gaya)|aata\s+hai|aate\s+hain/i;
+  /most\s+(?:frequent(?:ly)?|repeated|common(?:ly)?|asked|important)|frequently\s+asked|important\s+questions?\b|how\s+(?:often|many\s+times)|repeated\s+questions?|weightage|year[-\s]?wise|trend|usually|gets?\s+asked|come(?:s)?\s+up|appears?\b|kitni\s+baar|sabse\s+(?:zyada|jyada)|baar\s+baar|(?:pucha|poocha)\s+(?:jata|jaata|gaya)|aata\s+hai|aate\s+hain/i;
 
 const TOPIC_PATTERN =
   /(?:asked|asks?|come(?:s)?\s+up|appear(?:s)?|questions?)\s+(?:about|on|from|regarding|related\s+to|cover(?:ing)?|for)\s+(.+?)[?.!\s]*$/i;

@@ -12,6 +12,7 @@ import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent, type HistoryTurn } from "@/lib/intent";
+import { normalizeQuery } from "@/lib/normalize";
 import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
 import { prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
@@ -62,7 +63,8 @@ export async function POST(req: Request) {
     history: rawHistory,
   } = (body ?? {}) as Record<string, unknown>;
   const subject = String(rawSubject ?? "").trim();
-  const question = String(rawQuestion ?? "").trim();
+  // "imp ques" → "important questions" etc. before anything reads the query.
+  const question = normalizeQuery(String(rawQuestion ?? ""));
   const history = sanitizeHistory(rawHistory);
   if (!subject || !question) {
     return NextResponse.json({ error: "subject and question are required" }, { status: 400 });
