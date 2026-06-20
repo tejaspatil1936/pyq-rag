@@ -9,8 +9,10 @@
  */
 
 const ABUSE_PATTERNS: RegExp[] = [
-  // meta-instruction / prompt attacks
-  /ignore\s+(?:all\s+|any\s+)?(?:previous|prior|above|earlier|your)\s+(?:instructions?|prompts?|rules?)/i,
+  // meta-instruction / prompt attacks ("ignore [all] [your] previous instructions");
+  // requires a previous/system-style qualifier so "ignore firewall rules" stays legal
+  /(?:ignore|disregard|forget)\s+(?:all\s+|any\s+)?(?:your\s+|the\s+|my\s+)?(?:previous|prior|above|earlier|initial|original|system)\s+(?:instructions?|prompts?|rules?)/i,
+  /ignore\s+your\s+(?:instructions?|prompts?|rules?)/i,
   /\b(?:system|hidden|secret)\s+prompt\b/i,
   /\b(?:reveal|show|print)\s+(?:me\s+)?your\s+(?:instructions?|prompt|rules)/i,
   // persona switching / jailbreak
