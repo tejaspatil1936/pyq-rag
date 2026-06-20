@@ -37,7 +37,7 @@ export interface Citation {
   similarity: number;
 }
 
-export type Intent = "ANALYTICS" | "TOPIC_ANALYTICS" | "SEMANTIC";
+export type Intent = "ANALYTICS" | "TOPIC_ANALYTICS" | "SEMANTIC" | "REFUSED";
 
 export interface AskResponse {
   intent: Intent;
@@ -45,6 +45,12 @@ export interface AskResponse {
   topic?: string;
   clusters?: ClusterResult[];
   citations?: Citation[];
+  /** True when served from the response cache. */
+  cached?: boolean;
+  /** True when retrieval couldn't support an answer (honest no-answer path). */
+  no_answer?: boolean;
+  /** True when Gemini quota is exhausted and raw retrieval was returned. */
+  degraded?: boolean;
 }
 
 export interface StatsResponse {

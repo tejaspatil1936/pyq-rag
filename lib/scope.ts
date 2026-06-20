@@ -1,0 +1,33 @@
+/**
+ * Layer 0 of the scope gate: zero-cost regex prefilter for obvious abuse.
+ *
+ * Deliberately conservative — exam questions legitimately say things like
+ * "write a C program for linked lists", so only unambiguous jailbreak /
+ * persona / non-academic-task patterns are caught here. Everything subtler
+ * is judged by the classifier (which returns in_scope in the same Gemini
+ * call as intent, costing nothing extra).
+ */
+
+const ABUSE_PATTERNS: RegExp[] = [
+  // meta-instruction / prompt attacks
+  /ignore\s+(?:all\s+|any\s+)?(?:previous|prior|above|earlier|your)\s+(?:instructions?|prompts?|rules?)/i,
+  /\b(?:system|hidden|secret)\s+prompt\b/i,
+  /\b(?:reveal|show|print)\s+(?:me\s+)?your\s+(?:instructions?|prompt|rules)/i,
+  // persona switching / jailbreak
+  /\byou\s+are\s+(?:now\s+)?(?:an?\s+)?(?:unrestricted|uncensored|jailbroken|free)\b/i,
+  /\b(?:DAN|jailbreak|jailbroken|developer\s+mode)\b/i,
+  /^(?:please\s+)?(?:act\s+as|pretend\s+(?:to\s+be|you)|roleplay|role-play)\b/i,
+  // clearly non-academic tasks
+  /write\s+(?:me\s+)?(?:a\s+|an\s+)?(?:poem|song|story|essay|rap|joke|tweet|cover\s+letter|resume|love\s+letter)\b/i,
+  /translate\s+.{0,60}\s(?:to|into)\s+(?:hindi|marathi|english|french|german|spanish|\w+ese)\b/i,
+  /\b(?:girlfriend|boyfriend|dating|breakup|relationship\s+advice)\b/i,
+];
+
+export function prefilterAbuse(question: string): boolean {
+  return ABUSE_PATTERNS.some((p) => p.test(question));
+}
+
+/** One polite sentence; always suggests what CAN be asked. */
+export function refusalMessage(subject: string): string {
+  return `I can only help with **${subject}** previous-year papers — try asking about its repeated questions, a specific topic, or how to approach a question from the papers.`;
+}

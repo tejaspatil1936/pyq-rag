@@ -9,6 +9,7 @@ import {
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent } from "@/lib/intent";
+import { prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
 
@@ -46,7 +47,16 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `unknown subject: ${subject}` }, { status: 404 });
     }
 
-    const { intent, topic } = await classifyIntent(question);
+    // Scope gate layer 0: obvious abuse dies here for free, before Gemini.
+    if (prefilterAbuse(question)) {
+      return NextResponse.json({ intent: "REFUSED", answer: refusalMessage(subject) });
+    }
+
+    // Scope gate layer 1 rides along in the intent-classification call.
+    const { inScope, intent, topic } = await classifyIntent(question, { subject });
+    if (!inScope) {
+      return NextResponse.json({ intent: "REFUSED", answer: refusalMessage(subject) });
+    }
 
     if (intent === "ANALYTICS") {
       const clusters = await topClusters(subject, TOP_K);

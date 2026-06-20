@@ -13,6 +13,18 @@ function known(value: string | null): string | null {
 
 /** Renders one /api/ask response according to its intent. */
 export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: number }) {
+  if (res.intent === "REFUSED") {
+    return (
+      <div data-testid="refused-answer">
+        <span className="mb-2 inline-block rounded-full bg-amber-100 px-2.5 py-0.5 text-xs font-semibold text-amber-800">
+          Out of scope
+        </span>
+        <div className="prose prose-sm prose-slate max-w-none">
+          <ReactMarkdown remarkPlugins={[remarkGfm]}>{res.answer}</ReactMarkdown>
+        </div>
+      </div>
+    );
+  }
   if (res.intent === "SEMANTIC") {
     return <SemanticAnswer answer={res.answer} citations={res.citations ?? []} msgId={msgId} />;
   }
