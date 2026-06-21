@@ -51,9 +51,11 @@ describe.skipIf(!hasDb)("POST /api/ask (live DB)", () => {
   });
 
   it.skipIf(!hasGemini)("answers a semantic question with [n]-cited sources", async () => {
+    // Pinned to a corpus-anchored query so the grounding floor is cleared.
+    const subject = "Computer Networks";
     const res = await ask({
       subject,
-      question: "Explain what the examiners expect in a good answer here.",
+      question: "Explain the difference between TCP and UDP.",
     });
     expect(res.status).toBe(200);
     const body = await res.json();
