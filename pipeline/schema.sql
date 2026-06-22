@@ -35,13 +35,18 @@ CREATE TABLE IF NOT EXISTS clusters (
     representative_text TEXT NOT NULL,
     question_count      INTEGER NOT NULL,
     papers_count        INTEGER NOT NULL,
-    years_spanned       TEXT
+    years_spanned       TEXT,
+    topic               TEXT  -- canonical topic name assigned by label_topics.py
 );
+
+-- Existing databases predate the topic column.
+ALTER TABLE clusters ADD COLUMN IF NOT EXISTS topic TEXT;
 
 CREATE INDEX IF NOT EXISTS idx_questions_cluster ON questions (cluster_id);
 CREATE INDEX IF NOT EXISTS idx_questions_paper ON questions (paper_id);
 CREATE INDEX IF NOT EXISTS idx_papers_subject_status ON papers (standard_subject, status);
 CREATE INDEX IF NOT EXISTS idx_clusters_subject ON clusters (standard_subject);
+CREATE INDEX IF NOT EXISTS idx_clusters_subject_topic ON clusters (standard_subject, topic);
 
 -- ANN index for subject-filtered semantic search.
 CREATE INDEX IF NOT EXISTS idx_questions_embedding

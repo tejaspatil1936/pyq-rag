@@ -42,3 +42,8 @@ EMBED_BATCH_SIZE = 256        # questions fetched/updated per DB round-trip
 # --- Clustering ---
 CLUSTER_COSINE_THRESHOLD = 0.80   # similarity >= this => same cluster
 MAX_CLUSTER_SUBJECT_SIZE = 12_000 # agglomerative is O(n^2); guard runner memory
+
+# --- Topic labeling ---
+TOPIC_LABEL_BATCH = 40            # clusters labeled per Gemini call
+TOPIC_MERGE_THRESHOLD = 0.85      # label-embedding similarity >= this => same topic
+MAX_TOPIC_CHARS = 80
