@@ -37,7 +37,22 @@ export interface Citation {
   similarity: number;
 }
 
-export type Intent = "ANALYTICS" | "TOPIC_ANALYTICS" | "SEMANTIC" | "REFUSED";
+export type Intent =
+  | "ANALYTICS"
+  | "TOPIC_ANALYTICS"
+  | "TOPIC_WEIGHTAGE"
+  | "STUDY_GUIDE"
+  | "SEMANTIC"
+  | "REFUSED";
+
+export interface TopicResult {
+  topic: string;
+  exam_count: number;
+  total_marks: number | null;
+  cluster_count: number;
+  years: string[];
+  questions: { text: string; exam_count: number }[];
+}
 
 export interface AskResponse {
   intent: Intent;
@@ -45,6 +60,8 @@ export interface AskResponse {
   topic?: string;
   clusters?: ClusterResult[];
   citations?: Citation[];
+  topics?: TopicResult[];
+  total_exams?: number;
   /** True when served from the response cache. */
   cached?: boolean;
   /** True when retrieval couldn't support an answer (honest no-answer path). */

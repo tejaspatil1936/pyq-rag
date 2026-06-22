@@ -4,7 +4,13 @@ import { useState } from "react";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 
-import { type AskResponse, type Citation, type ClusterResult, yearSpan } from "@/lib/api-types";
+import {
+  type AskResponse,
+  type Citation,
+  type ClusterResult,
+  type TopicResult,
+  yearSpan,
+} from "@/lib/api-types";
 
 /** Some papers carry the literal string "Unknown" for year/exam_type — hide it. */
 function known(value: string | null): string | null {
@@ -27,6 +33,16 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
   }
   if (res.intent === "SEMANTIC") {
     return <SemanticAnswer answer={res.answer} citations={res.citations ?? []} msgId={msgId} />;
+  }
+  if (res.intent === "TOPIC_WEIGHTAGE" || res.intent === "STUDY_GUIDE") {
+    return (
+      <TopicAnswer
+        intent={res.intent}
+        answer={res.answer}
+        topics={res.topics ?? []}
+        totalExams={res.total_exams ?? null}
+      />
+    );
   }
   return (
     <div data-testid="analytics-answer">
@@ -57,6 +73,118 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
         </>
       )}
     </div>
+  );
+}
+
+/**
+ * TOPIC_WEIGHTAGE: prose summary + ranked topic list (frequency intent keeps
+ * list rendering). STUDY_GUIDE: chat-first — the plan is prose; the data
+ * that grounds it sits in one collapsed panel.
+ */
+function TopicAnswer({
+  intent,
+  answer,
+  topics,
+  totalExams,
+}: {
+  intent: "TOPIC_WEIGHTAGE" | "STUDY_GUIDE";
+  answer: string;
+  topics: TopicResult[];
+  totalExams: number | null;
+}) {
+  const prose = (
+    <div className="prose prose-sm prose-slate max-w-none prose-p:my-2 prose-li:my-0.5">
+      <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+    </div>
+  );
+  return (
+    <div data-testid={intent === "STUDY_GUIDE" ? "study-guide-answer" : "topic-weightage-answer"}>
+      <span className="mb-2 inline-block rounded-full bg-indigo-100 px-2.5 py-0.5 text-xs font-semibold text-indigo-700">
+        {intent === "STUDY_GUIDE" ? "Study plan" : "Topic weightage"}
+        {totalExams != null && ` · ${totalExams} exams analyzed`}
+      </span>
+      {prose}
+      {topics.length > 0 &&
+        (intent === "TOPIC_WEIGHTAGE" ? (
+          <ol className="mt-3 space-y-2">
+            {topics.map((t, i) => (
+              <TopicItem key={t.topic} topic={t} rank={i + 1} totalExams={totalExams} />
+            ))}
+          </ol>
+        ) : (
+          <details className="mt-3 border-t border-slate-100 pt-2">
+            <summary className="cursor-pointer select-none text-xs font-semibold text-slate-500 hover:text-indigo-600">
+              The data behind this plan ({topics.length} topics)
+            </summary>
+            <ol className="mt-2 space-y-2">
+              {topics.map((t, i) => (
+                <TopicItem key={t.topic} topic={t} rank={i + 1} totalExams={totalExams} />
+              ))}
+            </ol>
+          </details>
+        ))}
+    </div>
+  );
+}
+
+function TopicItem({
+  topic: t,
+  rank,
+  totalExams,
+}: {
+  topic: TopicResult;
+  rank: number;
+  totalExams: number | null;
+}) {
+  const span =
+    t.years.length === 0
+      ? null
+      : t.years.length === 1
+        ? t.years[0]
+        : `${t.years[0]}–${t.years[t.years.length - 1]}`;
+  return (
+    <li className="rounded-xl border border-slate-200 bg-white p-3 shadow-sm">
+      <div className="flex items-start gap-2.5">
+        <span className="mt-0.5 flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-indigo-600 text-xs font-bold text-white">
+          {rank}
+        </span>
+        <div className="min-w-0 flex-1">
+          <p className="text-sm font-semibold leading-snug">{t.topic}</p>
+          <div className="mt-1.5 flex flex-wrap items-center gap-1.5 text-xs">
+            <span className="rounded-full bg-emerald-100 px-2 py-0.5 font-semibold text-emerald-800">
+              {t.exam_count}
+              {totalExams != null ? ` of ${totalExams}` : ""} exam{t.exam_count === 1 ? "" : "s"}
+            </span>
+            {span && <span className="rounded-full bg-slate-100 px-2 py-0.5 text-slate-600">{span}</span>}
+            {t.total_marks != null && (
+              <span className="rounded-full bg-amber-50 px-2 py-0.5 text-amber-700">
+                {t.total_marks} marks total
+              </span>
+            )}
+          </div>
+          {t.questions.length > 0 && (
+            <details className="mt-2">
+              <summary className="cursor-pointer select-none text-xs font-medium text-slate-500 hover:text-indigo-600">
+                Questions ({t.questions.length})
+              </summary>
+              <ul className="mt-1.5 space-y-1">
+                {t.questions.map((q) => (
+                  <li
+                    key={q.text.slice(0, 80)}
+                    className="rounded-lg bg-slate-50 px-2.5 py-1.5 text-xs text-slate-700"
+                  >
+                    <span className="line-clamp-2">{q.text}</span>
+                    <span className="mt-0.5 block text-[11px] text-slate-400">
+                      asked in {q.exam_count} exam{q.exam_count === 1 ? "" : "s"}
+                    </span>
+                  </li>
+                ))}
+              </ul>
+            </details>
+          )}
+        </div>
+      </div>
+    </li>
   );
 }
 
