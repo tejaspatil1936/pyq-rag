@@ -2,10 +2,13 @@ import { NextResponse } from "next/server";
 
 import { clusterSources, topClusters, topicClusters } from "@/lib/analytics";
 import {
+  SOLUTION_CAUTION,
   formatAnalyticsAnswer,
   formatTopicAnalyticsAnswer,
+  formatTopicWeightageAnswer,
   guardOutput,
   synthesizeAnswer,
+  synthesizeStudyGuide,
 } from "@/lib/answer";
 import { cacheGet, cacheKey, cacheSet } from "@/lib/cache";
 import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
@@ -18,6 +21,7 @@ import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/r
 import { prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
+import { topicQuestions, topicWeightage, totalExams } from "@/lib/topics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -137,7 +141,7 @@ export async function POST(req: Request) {
 
     // Scope gate layer 1 rides along in the intent-classification call; the
     // history lets it resolve follow-ups like "explain the second one".
-    const { inScope, intent, topic, rewritten } = await classifyIntent(question, {
+    const { inScope, intent, topic, rewritten, topN, solving } = await classifyIntent(question, {
       subject,
       history,
     });
@@ -159,6 +163,79 @@ export async function POST(req: Request) {
         intent,
         answer: formatAnalyticsAnswer(subject, clusters, sources),
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+      });
+    }
+
+    if (intent === "TOPIC_WEIGHTAGE" || intent === "STUDY_GUIDE") {
+      const limit = topN ?? (intent === "STUDY_GUIDE" ? 8 : 10);
+      const [topics, total] = await Promise.all([topicWeightage(subject, limit), totalExams(subject)]);
+
+      if (topics.length === 0) {
+        // Subject not labeled yet: fall back to the analytics ranking rather
+        // than a dead end (the cron labels new subjects over time).
+        const clusters = await topClusters(subject, TOP_K);
+        const sources = await clusterSources(clusters.map((c) => c.cluster_id));
+        return respond({
+          intent: "ANALYTICS",
+          answer:
+            `Topics aren't labeled for **${subject}** yet — here are the most repeated questions instead.\n\n` +
+            (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
+          clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        });
+      }
+
+      const questions = await topicQuestions(subject, topics.map((t) => t.topic));
+      const topicsPayload = topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] }));
+
+      if (intent === "TOPIC_WEIGHTAGE") {
+        return respond({
+          intent,
+          answer: formatTopicWeightageAnswer(subject, topics, total),
+          topics: topicsPayload,
+          total_exams: total,
+        });
+      }
+
+      // STUDY_GUIDE: Gemini writes the plan from the deterministic data.
+      if (!consume(`synth:${client}`, synthLimit())) {
+        logAsk({ status: 429, limited: "synth" });
+        return NextResponse.json(
+          {
+            error:
+              "You've used this hour's AI answers. Frequency analytics still work — or try again in a bit.",
+          },
+          { status: 429 },
+        );
+      }
+      let plan: string;
+      try {
+        plan = await synthesizeStudyGuide(subject, question, topics, total, topN, history);
+      } catch (err) {
+        if (err instanceof GeminiUnavailable) {
+          return respond(
+            {
+              intent: "TOPIC_WEIGHTAGE",
+              answer:
+                "AI study plans are resting until tomorrow — here's the topic weightage to plan from instead.\n\n" +
+                formatTopicWeightageAnswer(subject, topics, total),
+              topics: topicsPayload,
+              total_exams: total,
+              degraded: true,
+            },
+            false,
+          );
+        }
+        throw err;
+      }
+      const guardedPlan = guardOutput(plan, subject, question);
+      if (guardedPlan.flagged) {
+        return respond({ intent: "REFUSED", answer: guardedPlan.answer });
+      }
+      return respond({
+        intent,
+        answer: guardedPlan.answer,
+        topics: topicsPayload,
+        total_exams: total,
       });
     }
 
@@ -196,10 +273,16 @@ export async function POST(req: Request) {
     // beats synthesis — say so and suggest what the papers DO cover.
     const grounded = hits.filter((h) => h.similarity >= SEMANTIC_MIN_SIMILARITY);
     if (grounded.length < MIN_GROUNDING_HITS) {
-      const suggestions = (await topClusters(subject, 3)).map(
-        (c) =>
-          `- ${c.representative_text.length > 120 ? `${c.representative_text.slice(0, 120)}…` : c.representative_text}`,
-      );
+      // Suggest topic names — students think in concepts, not verbatim
+      // question texts. Cluster texts remain the unlabeled-subject fallback.
+      const topicRows = await topicWeightage(subject, 3);
+      const suggestions =
+        topicRows.length > 0
+          ? topicRows.map((t) => `- ${t.topic} (${t.exam_count} exams)`)
+          : (await topClusters(subject, 3)).map(
+              (c) =>
+                `- ${c.representative_text.length > 120 ? `${c.representative_text.slice(0, 120)}…` : c.representative_text}`,
+            );
       return respond({
         intent,
         answer:
@@ -260,7 +343,9 @@ export async function POST(req: Request) {
     if (guarded.flagged) {
       return respond({ intent: "REFUSED", answer: guarded.answer });
     }
-    return respond({ intent, answer: guarded.answer, citations });
+    // Worked solutions get an explicit human-verification caution.
+    const answer = solving ? guarded.answer + SOLUTION_CAUTION : guarded.answer;
+    return respond({ intent, answer, citations });
   } catch (err) {
     if (err instanceof GeminiUnavailable) {
       logAsk({ status: 503 });
