@@ -138,8 +138,13 @@ function SemanticAnswer({
   const [flashRef, setFlashRef] = useState<number | null>(null);
 
   // Turn bare [n] markers into markdown links the renderer below intercepts.
+  // Adjacent markers like [1][7] are split first — flush chips read as a
+  // bare "17" — and the link text avoids nested brackets ("c1", never
+  // rendered: the chip shows the number parsed from the href).
   // The (?!\() lookahead leaves real markdown links like [text](url) alone.
-  const processed = answer.replace(/\[(\d+)\](?!\()/g, (_m, n) => `[[${n}]](#cite-${n})`);
+  const processed = answer
+    .replace(/\](?=\[\d+\])/g, "] ")
+    .replace(/\[(\d+)\](?!\()/g, (_m, n) => `[c${n}](#cite-${n})`);
 
   const jumpTo = (ref: number) => {
     setOpen(true);

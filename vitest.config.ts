@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import { configDefaults, defineConfig } from "vitest/config";
 
 export default defineConfig({
+  esbuild: { jsx: "automatic" },
   resolve: {
     // Match tsconfig's "@/*" so route handlers import cleanly in tests.
     alias: { "@": path.dirname(fileURLToPath(import.meta.url)) },
