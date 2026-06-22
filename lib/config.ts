@@ -18,9 +18,10 @@ export const TOPIC_MATCH_THRESHOLD = Number(process.env.TOPIC_MATCH_THRESHOLD ??
  * SEMANTIC: retrieval hits below this cosine similarity don't count as
  * coverage; fewer than MIN_GROUNDING_HITS hits at/above it means the papers
  * don't cover the query — the API answers honestly instead of synthesizing.
- * Calibrated on live data: weakest on-topic query ("what is subnetting...")
- * scored 0.395 top-1; strongest off-topic ("quantum entanglement" asked in
- * Computer Networks) scored 0.335; cross-domain noise sits below 0.2.
+ * Calibrated on live data with the production full-scan search: on-topic
+ * queries score 0.68–0.88 top-1 (weakest: "what is subnetting..." 0.680);
+ * obscure/adjacent queries top out at 0.418 ("blockchain consensus" asked
+ * in Computer Networks); cross-domain noise sits below 0.27.
  */
-export const SEMANTIC_MIN_SIMILARITY = Number(process.env.SEMANTIC_MIN_SIMILARITY ?? 0.36);
+export const SEMANTIC_MIN_SIMILARITY = Number(process.env.SEMANTIC_MIN_SIMILARITY ?? 0.45);
 export const MIN_GROUNDING_HITS = 2;

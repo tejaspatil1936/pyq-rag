@@ -157,7 +157,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     const subject = findSubject(/^computer networks$/i);
     const { status, body } = await ask({
       subject,
-      question: "Explain the PROFINET industrial ethernet scheduling model in detail.",
+      question: "Explain the LoRaWAN duty cycle regulations for IoT devices.",
     });
     expect(status).toBe(200);
     if (body.intent === "REFUSED") return; // scope refusal is also honest
