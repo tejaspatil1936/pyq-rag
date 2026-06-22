@@ -19,7 +19,9 @@ export function getPool(): Pool {
       connectionString: url,
       max: 3,
       idleTimeoutMillis: 30_000,
-      connectionTimeoutMillis: 15_000,
+      // Generous: Neon free tier can queue connects under parallel load
+      // (cold resume + many workers), and a slow connect beats a failure.
+      connectionTimeoutMillis: 30_000,
     });
   }
   return globalForDb.pyqPool;
