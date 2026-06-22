@@ -281,6 +281,64 @@ def preflight(km):
     log.info("preflight passed via key[%d] (model %r)", idx, config.GEMINI_MODEL)
 
 
+TOPIC_PROMPT = """\
+You are labeling university exam questions with short canonical topic names for a study tool.
+
+For EVERY item below, produce a concise topic name (2-6 words, Title Case, no trailing punctuation) naming the concept being tested — like "Infix to Postfix Conversion", "Hashing & Collision Resolution", "Binary Tree Traversals". Use the SAME name for items that test the same concept. Never invent a topic unrelated to the item's text.
+
+Return ONLY a JSON array with one element per input id:
+[{"id": 12, "topic": "..."}, ...]
+
+Items:
+"""
+
+
+def _parse_topic_labels(raw, valid_ids):
+    data = json.loads(raw)
+    if isinstance(data, dict):
+        data = next((v for v in data.values() if isinstance(v, list)), None)
+    if not isinstance(data, list):
+        raise ValueError("response is not a JSON array")
+    labels = {}
+    for item in data:
+        if not isinstance(item, dict):
+            continue
+        try:
+            cid = int(item.get("id"))
+        except (TypeError, ValueError):
+            continue
+        topic = str(item.get("topic") or "").strip().rstrip(".")
+        if cid in valid_ids and topic:
+            labels[cid] = topic[: config.MAX_TOPIC_CHARS]
+    return labels
+
+
+def label_cluster_topics(km, items):
+    """Label a batch of (cluster_id, representative_text) with topic names.
+
+    Returns {cluster_id: topic} for the ids Gemini answered; missing ids stay
+    unlabeled and are retried on the next run. Raises GeminiError only when
+    even the repair prompt fails.
+    """
+    lines = "\n".join(f'[id {cid}] {text[:400]}' for cid, text in items)
+    valid_ids = {cid for cid, _ in items}
+    raw, idx = _call(km, TOPIC_PROMPT + lines)
+    try:
+        labels = _parse_topic_labels(raw, valid_ids)
+        log.info("key[%d] labeled %d/%d clusters", idx, len(labels), len(items))
+        return labels
+    except (ValueError, json.JSONDecodeError) as exc:
+        log.warning("topic JSON parse failure (%s); retrying with repair prompt", exc)
+
+    raw2, idx2 = _call(km, REPAIR_PROMPT + raw[: config.MAX_PROMPT_CHARS])
+    try:
+        labels = _parse_topic_labels(raw2, valid_ids)
+        log.info("key[%d] repair prompt recovered %d/%d labels", idx2, len(labels), len(items))
+        return labels
+    except (ValueError, json.JSONDecodeError) as exc:
+        raise GeminiError(f"topic JSON parse failed even after repair: {exc}") from exc
+
+
 def extract_questions(km, paper_text):
     """Extract questions from one paper's text. Raises GeminiError on permanent failure."""
     raw, idx = _call(km, EXTRACTION_PROMPT + paper_text[: config.MAX_PROMPT_CHARS])
