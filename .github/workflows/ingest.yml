@@ -63,5 +63,8 @@ jobs:
       - name: Cluster questions
         run: python pipeline/cluster.py
 
+      - name: Label cluster topics
+        run: python pipeline/label_topics.py
+
       - name: Stats summary
         run: python pipeline/stats.py
