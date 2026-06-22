@@ -15,6 +15,8 @@ interface AskResponse {
   cached?: boolean;
   no_answer?: boolean;
   degraded?: boolean;
+  topics?: { topic: string; exam_count: number; questions: { text: string }[] }[];
+  total_exams?: number;
   clusters?: {
     representative_text: string;
     question_count: number;
@@ -256,6 +258,63 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(second.body.cached).toBe(true);
     expect(second.body.answer).toBe(first.body.answer);
     expect(secondMs).toBeLessThan(firstMs / 2);
+  }, 120_000);
+
+  // ---- The exact queries from the user transcript: each must return a
+  // topic-level, distinct, correctly-sized answer, never a raw question list.
+  const topicLevel = (body: AskResponse) => {
+    const topics = body.topics ?? [];
+    expect(topics.length).toBeGreaterThan(0);
+    for (const t of topics) {
+      expect(t.topic.length).toBeLessThanOrEqual(80); // concept names, not question texts
+      expect(t.topic).not.toMatch(/\?\s*$/);
+      expect(t.exam_count).toBeGreaterThanOrEqual(1);
+    }
+    return topics;
+  };
+
+  let studyPlan1st = "";
+
+  it("transcript: 'most important topics' answers with ranked topics", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "most important topics" });
+    expect(status).toBe(200);
+    expect(["TOPIC_WEIGHTAGE", "STUDY_GUIDE"]).toContain(body.intent);
+    topicLevel(body);
+    expect(body.answer).toBeTruthy();
+  });
+
+  it("transcript: 'list down 5 important topics' returns exactly 5", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "list down 5 important topics" });
+    expect(status).toBe(200);
+    expect(["TOPIC_WEIGHTAGE", "STUDY_GUIDE"]).toContain(body.intent);
+    expect(topicLevel(body).length).toBe(5);
+  });
+
+  it("transcript: 'what to study 1st' returns a grounded prose plan", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "what to study 1st" });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("STUDY_GUIDE");
+    const topics = topicLevel(body);
+    expect(body.answer!.length).toBeGreaterThan(100);
+    // the plan must actually talk about real topics from the data
+    const named = topics.filter((t) =>
+      body.answer!.toLowerCase().includes(t.topic.toLowerCase()),
+    );
+    expect(named.length).toBeGreaterThan(0);
+    studyPlan1st = body.answer!;
+  }, 120_000);
+
+  it("transcript: 'how to study for the exam' returns a distinct plan", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "how to study for the exam" });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("STUDY_GUIDE");
+    topicLevel(body);
+    expect(body.answer!.length).toBeGreaterThan(100);
+    expect(body.answer).not.toBe(studyPlan1st); // not one canned response
   }, 120_000);
 
   it("GET /api/health reports DB and key status", async () => {
