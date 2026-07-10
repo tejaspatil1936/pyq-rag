@@ -1,0 +1,67 @@
+name: Ingest PYQ papers
+
+on:
+  workflow_dispatch:
+    inputs:
+      limit:
+        description: "Max papers to process this run (set 5 for a smoke test)"
+        required: false
+        default: "300"
+  schedule:
+    # Every 4 hours while the backlog exists. Once papers pending reaches 0
+    # (see the stats step), switch this to monthly: "0 3 1 * *"
+    - cron: "0 */4 * * *"
+
+# Never run two ingests at once; a queued run waits for the current one.
+concurrency:
+  group: ingest
+  cancel-in-progress: false
+
+jobs:
+  ingest:
+    runs-on: ubuntu-latest
+    timeout-minutes: 350
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      GEMINI_API_KEYS: ${{ secrets.GEMINI_API_KEYS }}
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Install tesseract (OCR fallback for scanned papers)
+        run: sudo apt-get update -qq && sudo apt-get install -y -qq --no-install-recommends tesseract-ocr
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+          cache: pip
+          cache-dependency-path: pipeline/requirements.txt
+
+      - name: Cache sentence-transformers model
+        uses: actions/cache@v4
+        with:
+          path: ~/.cache/huggingface
+          key: hf-all-MiniLM-L6-v2
+
+      - name: Install python dependencies (CPU-only torch)
+        run: |
+          python -m pip install --upgrade pip
+          pip install torch --index-url https://download.pytorch.org/whl/cpu
+          pip install -r pipeline/requirements.txt
+
+      - name: Apply schema (idempotent)
+        run: python pipeline/apply_schema.py
+
+      - name: Sync paper metadata
+        run: python pipeline/fetch_metadata.py
+
+      - name: Ingest batch (download -> extract -> Gemini -> save, streaming)
+        run: python pipeline/ingest.py --limit "${{ github.event.inputs.limit || '300' }}"
+
+      - name: Embed new questions
+        run: python pipeline/embed.py
+
+      - name: Cluster questions
+        run: python pipeline/cluster.py
+
+      - name: Stats summary
+        run: python pipeline/stats.py
