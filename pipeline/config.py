@@ -19,7 +19,9 @@ MIN_TEXT_CHARS = 100          # text layer shorter than this => scanned PDF => O
 OCR_DPI = 200
 
 # --- Gemini (question extraction) ---
-GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.0-flash")
+# gemini-2.0-flash was retired (free-tier limit dropped to 0). If extraction
+# ever starts failing with "MODEL HAS NO FREE TIER", check this first.
+GEMINI_MODEL = os.getenv("GEMINI_MODEL", "gemini-2.5-flash-lite")
 GEMINI_TIMEOUT_S = 120
 GEMINI_CALL_DELAY_S = 2.0     # base sleep after every successful call (per-minute limits)
 RATE_LIMIT_COOLDOWN_S = 60    # per-minute 429 => short cooldown for that key
