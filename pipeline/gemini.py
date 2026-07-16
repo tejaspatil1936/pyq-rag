@@ -44,6 +44,11 @@ Return ONLY the corrected, valid JSON array — no commentary, no markdown.
 
 """
 
+# Key indexes whose first 429 body has already been dumped this run, so the
+# log carries one full raw error per key for diagnosis without drowning in
+# repeats.
+_logged_quota_keys = set()
+
 
 class GeminiError(Exception):
     """Permanent failure for this input; the paper is marked failed, run continues."""
@@ -136,6 +141,9 @@ def _call(km, prompt):
 
         if resp.status_code == 429:
             body = resp.text
+            if idx not in _logged_quota_keys:
+                _logged_quota_keys.add(idx)
+                log.warning("key[%d] first quota error this run — raw body: %s", idx, body[:2000])
             quota_ids, retry_s, limit_zero = _parse_429(body)
             if limit_zero:
                 log.error(
