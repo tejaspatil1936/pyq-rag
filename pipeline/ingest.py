@@ -17,6 +17,7 @@ Usage:
 import argparse
 import logging
 import os
+import sys
 import tempfile
 import time
 
@@ -26,7 +27,7 @@ from psycopg2.extras import execute_values
 import config
 import db
 from extract_text import extract_text
-from gemini import extract_questions
+from gemini import ModelHasNoFreeTier, extract_questions
 from key_manager import AllKeysExhausted, KeyManager
 
 log = logging.getLogger("ingest")
@@ -129,6 +130,11 @@ def main():
                 except AllKeysExhausted as exc:
                     log.warning("stopping cleanly: %s", exc)
                     break
+                except ModelHasNoFreeTier as exc:
+                    # Misconfigured/retired model: no key rotation can help.
+                    # Fail the job loudly so the workflow run goes red.
+                    log.error("aborting run: %s", exc)
+                    sys.exit(1)
                 except Exception as exc:  # noqa: BLE001 — one bad paper never crashes the run
                     failed += 1
                     log.error("paper %d failed: %s", paper[0], exc)

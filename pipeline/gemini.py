@@ -49,6 +49,59 @@ class GeminiError(Exception):
     """Permanent failure for this input; the paper is marked failed, run continues."""
 
 
+class ModelHasNoFreeTier(Exception):
+    """The configured GEMINI_MODEL has zero free-tier quota (429 with limit: 0).
+
+    Rotating keys cannot help — the model itself is retired or paid-only, so
+    the whole run must abort loudly instead of benching keys one by one.
+    """
+
+
+def _parse_429(body):
+    """Parse a 429 body into (quota_ids, retry_delay_s, limit_zero).
+
+    The API reports structured details (QuotaFailure violations + RetryInfo);
+    some variants flatten the same info into the message text, so regex
+    fallbacks cover both shapes.
+    """
+    quota_ids = []
+    retry_s = None
+    limit_zero = False
+
+    try:
+        err = json.loads(body).get("error") or {}
+    except (ValueError, AttributeError):
+        err = {}
+    if not isinstance(err, dict):
+        err = {}
+    for detail in err.get("details") or []:
+        dtype = str(detail.get("@type", ""))
+        if dtype.endswith("QuotaFailure"):
+            for violation in detail.get("violations") or []:
+                qid = str(violation.get("quotaId", ""))
+                if qid:
+                    quota_ids.append(qid)
+                if str(violation.get("quotaValue", "")).strip() == "0":
+                    limit_zero = True
+        elif dtype.endswith("RetryInfo"):
+            m = re.match(r"(\d+)", str(detail.get("retryDelay", "")))
+            if m:
+                retry_s = int(m.group(1)) + 1
+
+    # \\? tolerates JSON-escaped quotes when the info sits in the message text.
+    if not quota_ids:
+        quota_ids = re.findall(r'quota_?[iI]d\\?"?\s*:\s*\\?"?([\w.-]+)', body)
+    if retry_s is None:
+        m = re.search(r'retry_?[dD]elay\\?"?\s*:\s*\\?"?(\d+)', body)
+        if m:
+            retry_s = int(m.group(1)) + 1
+    # A quota limit of 0 means the model has no free tier at all.
+    if re.search(r"limit:\s*0\b", body):
+        limit_zero = True
+
+    return quota_ids, retry_s, limit_zero
+
+
 def _call(km, prompt):
     """Send one prompt, rotating keys on rate limits. Returns (text, key_index)."""
     max_attempts = max(km.pool_size * 2, 4)
@@ -83,13 +136,27 @@ def _call(km, prompt):
 
         if resp.status_code == 429:
             body = resp.text
-            retry_m = re.search(r'"retryDelay"\s*:\s*"(\d+)', body)
-            retry_s = int(retry_m.group(1)) + 1 if retry_m else None
-            if "PerDay" in body or "daily" in body.lower():
-                log.warning("key[%d] daily quota exhausted", idx)
+            quota_ids, retry_s, limit_zero = _parse_429(body)
+            if limit_zero:
+                log.error(
+                    "model %r reports a quota limit of 0 — raw body: %s",
+                    config.GEMINI_MODEL, body[:2000],
+                )
+                raise ModelHasNoFreeTier(
+                    f"MODEL HAS NO FREE TIER — check GEMINI_MODEL "
+                    f"(currently {config.GEMINI_MODEL!r})"
+                )
+            if any("perday" in q.lower() for q in quota_ids) or (not quota_ids and "PerDay" in body):
+                log.warning(
+                    "key[%d] daily quota exhausted (%s)",
+                    idx, ", ".join(quota_ids) or "quotaId unparsed",
+                )
                 km.mark_quota_exhausted(idx)
             else:
-                log.warning("key[%d] rate limited (per-minute)", idx)
+                log.warning(
+                    "key[%d] per-minute rate limit, cooling down %ss",
+                    idx, retry_s or config.RATE_LIMIT_COOLDOWN_S,
+                )
                 km.mark_rate_limited(idx, retry_s)
             continue
 
