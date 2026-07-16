@@ -14,7 +14,6 @@ import time
 import requests
 
 import config
-from key_manager import KeyManager  # noqa: F401  (re-exported for callers)
 
 log = logging.getLogger(__name__)
 
