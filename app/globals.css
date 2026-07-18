@@ -1,10 +1,15 @@
 @import "tailwindcss";
 @plugin "@tailwindcss/typography";
 
+/* Dark theme: native form controls and scrollbars follow suit. */
+:root {
+  color-scheme: dark;
+}
+
 /* Brief flash when a [n] marker jumps to its citation card. */
 @keyframes cite-flash {
   0% {
-    background-color: var(--color-indigo-100);
+    background-color: var(--color-indigo-900);
   }
   100% {
     background-color: transparent;

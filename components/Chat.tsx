@@ -81,12 +81,12 @@ export default function Chat({
 
   return (
     <div className="flex h-dvh flex-col">
-      <header className="sticky top-0 z-10 border-b border-slate-200 bg-white/90 backdrop-blur">
+      <header className="sticky top-0 z-10 border-b border-slate-800 bg-slate-950/90 backdrop-blur">
         <div className="mx-auto flex max-w-2xl items-center justify-between gap-3 px-4 py-3">
           <div className="min-w-0">
             <h1 className="truncate text-sm font-bold">{subject}</h1>
             {questionCount != null && (
-              <p className="text-xs text-slate-500">
+              <p className="text-xs text-slate-400">
                 {questionCount.toLocaleString()} questions from past papers
               </p>
             )}
@@ -96,7 +96,7 @@ export default function Chat({
               <button
                 type="button"
                 onClick={() => setMessages([])}
-                className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+                className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
               >
                 New chat
               </button>
@@ -104,7 +104,7 @@ export default function Chat({
             <button
               type="button"
               onClick={onChangeSubject}
-              className="rounded-lg border border-slate-300 px-3 py-1.5 text-xs font-medium text-slate-600 hover:bg-slate-100"
+              className="rounded-lg border border-slate-700 px-3 py-1.5 text-xs font-medium text-slate-300 hover:bg-slate-800"
             >
               Change subject
             </button>
@@ -116,10 +116,10 @@ export default function Chat({
         <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
           {messages.length === 0 && !loading && (
             <div className="py-10 text-center">
-              <p className="text-lg font-semibold text-slate-700">
+              <p className="text-lg font-semibold text-slate-200">
                 Ask anything about {subject} papers
               </p>
-              <p className="mx-auto mt-2 max-w-sm text-sm text-slate-500">
+              <p className="mx-auto mt-2 max-w-sm text-sm text-slate-400">
                 Frequency questions get real counts from the archive. Open-ended questions get
                 answers grounded in actual past questions, with sources.
               </p>
@@ -139,7 +139,7 @@ export default function Chat({
             if (msg.role === "error") {
               return (
                 <div key={msg.id} className="flex" data-msg-role="error">
-                  <div className="max-w-[95%] rounded-2xl rounded-bl-md border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+                  <div className="max-w-[95%] rounded-2xl rounded-bl-md border border-red-900 bg-red-950 px-4 py-3 text-sm text-red-300">
                     <p>{msg.text}</p>
                     <button
                       type="button"
@@ -154,7 +154,7 @@ export default function Chat({
             }
             return (
               <div key={msg.id} className="flex" data-msg-role="assistant">
-                <div className="w-full max-w-[95%] rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
+                <div className="w-full max-w-[95%] rounded-2xl rounded-bl-md border border-slate-800 bg-slate-900 px-4 py-3 shadow-sm">
                   <AnswerView res={msg.res} msgId={msg.id} />
                 </div>
               </div>
@@ -166,7 +166,7 @@ export default function Chat({
         </div>
       </main>
 
-      <footer className="border-t border-slate-200 bg-white pb-[env(safe-area-inset-bottom)]">
+      <footer className="border-t border-slate-800 bg-slate-950 pb-[env(safe-area-inset-bottom)]">
         <div className="mx-auto max-w-2xl px-4 pt-2">
           <div className="flex gap-2 overflow-x-auto pb-2 [-webkit-overflow-scrolling:touch]">
             {QUICK_ACTIONS.map((qa) => (
@@ -175,7 +175,7 @@ export default function Chat({
                 type="button"
                 disabled={loading}
                 onClick={() => send(qa.question)}
-                className="shrink-0 rounded-full border border-indigo-200 bg-indigo-50 px-3 py-1.5 text-xs font-medium text-indigo-700 hover:bg-indigo-100 disabled:opacity-50"
+                className="shrink-0 rounded-full border border-indigo-800 bg-indigo-950 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-900 disabled:opacity-50"
               >
                 {qa.label}
               </button>
@@ -195,7 +195,7 @@ export default function Chat({
               placeholder={`Ask about ${subject}…`}
               maxLength={1000}
               enterKeyHint="send"
-              className="min-w-0 flex-1 rounded-xl border border-slate-300 bg-white px-4 py-2.5 text-sm outline-none focus:border-indigo-500 focus:ring-2 focus:ring-indigo-200"
+              className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
             />
             <button
               type="submit"
@@ -229,12 +229,12 @@ function LoadingBubble() {
   ];
   return (
     <div className="flex" data-msg-role="loading">
-      <div className="flex items-center gap-3 rounded-2xl rounded-bl-md border border-slate-200 bg-white px-4 py-3 shadow-sm">
+      <div className="flex items-center gap-3 rounded-2xl rounded-bl-md border border-slate-800 bg-slate-900 px-4 py-3 shadow-sm">
         <span className="relative flex h-4 w-4">
           <span className="absolute inline-flex h-full w-full animate-ping rounded-full bg-indigo-400 opacity-60" />
           <span className="relative inline-flex h-4 w-4 rounded-full border-2 border-indigo-500 border-t-transparent motion-safe:animate-spin" />
         </span>
-        <span className="text-sm text-slate-500" aria-live="polite">
+        <span className="text-sm text-slate-400" aria-live="polite">
           {hints[phase]}
         </span>
       </div>
