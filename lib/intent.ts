@@ -49,7 +49,7 @@ First decide scope. in_scope=true covers anything about studying ${subject}: its
 
 If in scope, route it:
 ANALYTICS — ranked most-repeated QUESTIONS across the whole subject, optionally narrowed by year or exam type: "most repeated questions", "questions that came in 2024", "most asked in MSE", "last year's ESE".
-TOPIC_WEIGHTAGE — a ranking of TOPICS/concepts: "topic-wise weightage", "most important topics", "list 5 important topics", "which topics matter most".
+TOPIC_WEIGHTAGE — a ranking of TOPICS/concepts: "topic-wise weightage", "most important topics", "list 5 important topics", "which topics matter most". (Questions about SKIPPING or leaving out topics are STUDY_GUIDE, never TOPIC_WEIGHTAGE.)
 STUDY_GUIDE — wants strategy or a plan: "how to study", "what should I study first", "make me a study plan", "how do I prepare", "what can I skip".
 TOPIC_ANALYTICS — what or how often things are asked about one SPECIFIC named topic.
 SEMANTIC — everything else: explain, understand, compare, answer content.
@@ -86,7 +86,7 @@ const TOPIC_PATTERN_PASSIVE =
 // Strategy/plan requests — checked BEFORE the explain-opener because
 // "how to study" starts explain-like but is not a content question.
 const STUDY_GUIDE_RE =
-  /how\s+(?:to|do\s+i|should\s+i|can\s+i)\s+(?:study|prepare|revise|start)|study\s+plan|revision\s+plan|what\s+(?:to|should\s+i)\s+study|prepare\s+for\s+(?:the\s+)?exam|where\s+(?:do\s+i|to|should\s+i)\s+(?:start|begin)|study\s+(?:1st|first)|kaise\s+padhu|kya\s+padhu/i;
+  /how\s+(?:to|do\s+i|should\s+i|can\s+i)\s+(?:study|prepare|revise|start)|study\s+plan|revision\s+plan|what\s+(?:to|should\s+i)\s+study|prepare\s+for\s+(?:the\s+)?exam|where\s+(?:do\s+i|to|should\s+i)\s+(?:start|begin)|study\s+(?:1st|first)|\bskip\b|leave\s+out|kaise\s+padhu|kya\s+padhu/i;
 
 const WEIGHTAGE_RE =
   /weightage|important\s+topics?\b|which\s+topics|top\s+\d*\s*topics|topic[-\s]?wise|most\s+asked\s+topics|imp\s+topics?\b/i;
@@ -121,6 +121,42 @@ export function extractYear(q: string): string | null {
 export function extractExamType(q: string): string | null {
   const m = /\b(ese|mse|cat)\b/i.exec(q);
   return m ? m[1].toUpperCase() : null;
+}
+
+const SKIP_RE = /\bskip(?:s|ped|ping)?\b|leave\s+out|deprioriti[sz]e/i;
+
+/** True when nothing meaningful remains once filter/stop words are removed
+ *  ("last year's ESE" -> ""): the query IS the filter, i.e. an analytics ask. */
+function isFilterOnlyQuery(q: string): boolean {
+  const rest = q
+    .toLowerCase()
+    .replace(/\b20\d{2}\b/g, " ")
+    .replace(/\blast\s+year'?s?\b/g, " ")
+    .replace(/\b(?:ese|mse|cat)\b/g, " ")
+    .replace(/\b(?:papers?|questions?|exams?|the|of|in|for|from|show|me|give|list|all|what|which|came|asked|s)\b/g, " ")
+    .replace(/[^a-z]+/g, "")
+    .trim();
+  return rest.length <= 2;
+}
+
+/**
+ * Deterministic corrections applied AFTER classification (Gemini or
+ * heuristic) — live testing showed the classifier drifts on exactly these:
+ * skip questions belong to the study guide (its prompt is the only one with
+ * the full-distribution tail), and a filter-only query like "last year's
+ * ESE" is a frequency ask, never a semantic search.
+ */
+export function coerceIntent(
+  intent: Intent,
+  question: string,
+  year: string | null,
+  examType: string | null,
+): Intent {
+  if (intent === "TOPIC_WEIGHTAGE" && SKIP_RE.test(question)) return "STUDY_GUIDE";
+  if (intent === "SEMANTIC" && (year || examType) && isFilterOnlyQuery(question)) {
+    return "ANALYTICS";
+  }
+  return intent;
 }
 
 /**

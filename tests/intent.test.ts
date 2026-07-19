@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyHeuristic } from "../lib/intent";
+import { classifyHeuristic, coerceIntent } from "../lib/intent";
 
 // The heuristic is the resilience fallback when the Gemini classification
 // call fails; it must at least nail the obvious phrasings of all three
@@ -56,6 +56,29 @@ describe("classifyHeuristic", () => {
     expect(c.examType).toBe("ESE");
     expect(c.year).toBe(String(new Date().getFullYear() - 1));
     expect(classifyHeuristic("explain the OSI model").year).toBeNull();
+  });
+
+  it("skip phrasings land on the study guide, even via heuristic", () => {
+    expect(classifyHeuristic("which topics can I skip if I'm short on time?").intent).toBe(
+      "STUDY_GUIDE",
+    );
+  });
+
+  it("coerceIntent corrects known classifier drift", () => {
+    // skip questions must reach the study guide (only path with the tail)
+    expect(coerceIntent("TOPIC_WEIGHTAGE", "which topics can I skip?", null, null)).toBe(
+      "STUDY_GUIDE",
+    );
+    // a filter-only query is an analytics ask, not semantic search
+    expect(coerceIntent("SEMANTIC", "last year's ESE", "2025", "ESE")).toBe("ANALYTICS");
+    expect(coerceIntent("SEMANTIC", "2024 papers", "2024", null)).toBe("ANALYTICS");
+    // real semantic questions that merely mention a year stay semantic
+    expect(
+      coerceIntent("SEMANTIC", "explain the subnetting question from the 2024 ESE paper", "2024", "ESE"),
+    ).toBe("SEMANTIC");
+    expect(coerceIntent("TOPIC_WEIGHTAGE", "most important topics", null, null)).toBe(
+      "TOPIC_WEIGHTAGE",
+    );
   });
 
   it("flags solving intent for worked-problem requests", () => {

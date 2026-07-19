@@ -22,7 +22,7 @@ import { cacheGet, cacheKey, cacheSet } from "@/lib/cache";
 import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
-import { classifyIntent, type HistoryTurn } from "@/lib/intent";
+import { classifyIntent, coerceIntent, type HistoryTurn } from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
 import { logEvent } from "@/lib/obs";
 import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
@@ -154,11 +154,14 @@ export async function POST(req: Request) {
 
     // Scope gate layer 1 rides along in the intent-classification call; the
     // history lets it resolve follow-ups like "explain the second one".
-    const { inScope, intent, topic, rewritten, topN, solving, predictive, year, examType } =
-      await classifyIntent(question, { subject, history });
+    const cls = await classifyIntent(question, { subject, history });
+    const { inScope, topic, rewritten, topN, solving, predictive, year, examType } = cls;
     if (!inScope) {
       return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
     }
+    // Deterministic fixes for known classifier drift (skip -> study guide,
+    // filter-only queries -> analytics).
+    const intent = coerceIntent(cls.intent, question, year, examType);
     const filters = { year, examType };
     const note = filterLabel(filters);
 
