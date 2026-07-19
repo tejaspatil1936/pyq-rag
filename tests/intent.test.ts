@@ -38,6 +38,26 @@ describe("classifyHeuristic", () => {
     expect(classifyHeuristic("most important topics").topN).toBeNull();
   });
 
+  it("flags prediction phrasings", () => {
+    expect(classifyHeuristic("predict what will come this year").predictive).toBe(true);
+    expect(classifyHeuristic("what will be asked this year?").predictive).toBe(true);
+    expect(classifyHeuristic("most repeated questions").predictive).toBe(false);
+  });
+
+  it("extracts year and exam-type filters", () => {
+    const a = classifyHeuristic("questions that came in 2024");
+    expect(a.intent).toBe("ANALYTICS");
+    expect(a.year).toBe("2024");
+    const b = classifyHeuristic("most asked in MSE");
+    expect(b.intent).toBe("ANALYTICS");
+    expect(b.examType).toBe("MSE");
+    const c = classifyHeuristic("last year's ESE papers");
+    expect(c.intent).toBe("ANALYTICS");
+    expect(c.examType).toBe("ESE");
+    expect(c.year).toBe(String(new Date().getFullYear() - 1));
+    expect(classifyHeuristic("explain the OSI model").year).toBeNull();
+  });
+
   it("flags solving intent for worked-problem requests", () => {
     const c = classifyHeuristic("solve the 2019 subnetting numerical for me");
     expect(c.intent).toBe("SEMANTIC");

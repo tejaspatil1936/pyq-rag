@@ -49,6 +49,21 @@ describe("citation marker rendering", () => {
     for (const n of [2, 5, 10]) expect(html).toContain(`>${n}</button>`);
   });
 
+  it("comma groups like [1, 5] expand to one chip per number", () => {
+    const html = renderSemantic("Both approaches appear [1, 5] in papers.", [1, 5]);
+    expect(html).toContain(">1</button>");
+    expect(html).toContain(">5</button>");
+    expect(html).not.toContain("[1, 5]");
+    expect(html).not.toMatch(/appear\s*1,\s*5/);
+  });
+
+  it("'and' groups like [1, 3, 5, and 6] expand fully", () => {
+    const html = renderSemantic("This is required by [1, 3, 5, and 6].", [1, 3, 5, 6]);
+    for (const n of [1, 3, 5, 6]) expect(html).toContain(`>${n}</button>`);
+    expect(html).not.toMatch(/required by\s*1,\s*3/);
+    expect(html).not.toContain("and 6]");
+  });
+
   it("real markdown links are left untouched", () => {
     const html = renderSemantic("See [the paper](https://example.com/x.pdf) [1].", [1]);
     expect(html).toContain('href="https://example.com/x.pdf"');

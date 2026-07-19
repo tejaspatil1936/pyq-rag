@@ -17,6 +17,10 @@ interface AskResponse {
   degraded?: boolean;
   topics?: { topic: string; exam_count: number; questions: { text: string }[] }[];
   total_exams?: number;
+  topic_exam_count?: number;
+  skip_candidates?: { topic: string; exam_count: number }[];
+  filters?: { year?: string | null; exam_type?: string | null };
+  predictive?: boolean;
   clusters?: {
     representative_text: string;
     question_count: number;
@@ -316,6 +320,102 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.answer!.length).toBeGreaterThan(100);
     expect(body.answer).not.toBe(studyPlan1st); // not one canned response
   }, 120_000);
+
+  it("prediction phrasing leads with the cannot-predict disclaimer", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "predict what will come this year" });
+    expect(status).toBe(200);
+    expect(body.predictive).toBe(true);
+    // disclaimer FIRST, then the frequency data
+    expect(body.answer).toMatch(/^\*\*Heads up: nobody can predict an exam paper\.\*\*/);
+    expect(body.answer).toMatch(/cannot predict/i);
+    expect((body.topics ?? body.clusters ?? []).length).toBeGreaterThan(0);
+  });
+
+  it("year filter: 'questions that came in 2024' counts only 2024 exams", async () => {
+    const subject = findSubject(/^computer networks$/i);
+    const { status, body } = await ask({ subject, question: "questions that came in 2024" });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("ANALYTICS");
+    expect(body.filters?.year).toBe("2024");
+    expect((body.clusters ?? []).length).toBeGreaterThan(0); // CN has 2024 papers
+    expect(body.answer).toContain("2024");
+  });
+
+  it("exam-type filter: 'most asked in MSE' counts only MSE exams", async () => {
+    const subject = findSubject(/^computer networks$/i);
+    const { status, body } = await ask({ subject, question: "most asked in MSE" });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("ANALYTICS");
+    expect(body.filters?.exam_type).toBe("MSE");
+    expect((body.clusters ?? []).length).toBeGreaterThan(0); // CN has MSE papers
+    expect(body.answer).toContain("MSE");
+  });
+
+  it("empty filter result: 'last year's ESE' says so honestly", async () => {
+    // The archive has no Computer Networks papers for last year — the
+    // answer must say that instead of silently returning unfiltered data.
+    const subject = findSubject(/^computer networks$/i);
+    const { status, body } = await ask({ subject, question: "last year's ESE" });
+    expect(status).toBe(200);
+    expect(body.filters?.exam_type).toBe("ESE");
+    expect(body.filters?.year).toBeTruthy();
+    expect(body.clusters ?? []).toEqual([]);
+    expect(body.answer).toMatch(/has no .* papers|nothing to count|Nothing about/i);
+    expect(body.answer).toMatch(/Years available/i);
+  });
+
+  it("skip queries only sacrifice the rarely-asked tail", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({
+      subject,
+      question: "which topics can I skip if I'm short on time?",
+    });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("STUDY_GUIDE");
+    // must state that the high-frequency topics can't be skipped
+    expect(body.answer).toMatch(/not skippable|cannot (?:be )?skip|can't (?:be )?skip|shouldn'?t skip|too (?:often|frequent)/i);
+    // any named skip candidate must come from the full-distribution tail
+    const tail = body.skip_candidates ?? [];
+    expect(tail.length).toBeGreaterThan(0);
+    for (const t of tail) expect(t.exam_count).toBeLessThanOrEqual(3);
+    const namedFromTail = tail.filter((t) =>
+      body.answer!.toLowerCase().includes(t.topic.toLowerCase()),
+    );
+    expect(namedFromTail.length).toBeGreaterThan(0);
+    // and never recommends skipping a top-3 topic
+    const topNames = (body.topics ?? []).slice(0, 3).map((t) => t.topic.toLowerCase());
+    for (const sentence of body.answer!.split(/(?<=[.!?])\s+/)) {
+      if (/skip/i.test(sentence) && !/not|n't|cannot|never/i.test(sentence)) {
+        for (const name of topNames) {
+          expect(sentence.toLowerCase()).not.toContain(name);
+        }
+      }
+    }
+  }, 120_000);
+
+  it.each(["hi", "?"])("greeting %j gets a capabilities nudge, not a refusal", async (question) => {
+    const subject = findSubject(/^computer networks$/i);
+    const { status, body } = await ask({ subject, question });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("GREETING");
+    expect(body.answer).toContain(subject);
+    expect(body.answer).toMatch(/most important topics/i); // suggests what to try
+    expect(body.answer).not.toMatch(/only help with/i); // not the refusal
+  });
+
+  it("'how many times has X been asked' leads with the exam total", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({
+      subject,
+      question: "how many times has hashing been asked",
+    });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("TOPIC_ANALYTICS");
+    expect(body.topic_exam_count).toBeGreaterThan(0);
+    expect(body.total_exams).toBeGreaterThan(0);
+    expect(body.answer).toMatch(/appeared in \*\*\d+\*\* of \d+/);
+  });
 
   it("GET /api/health reports DB and key status", async () => {
     const res = await fetch(`${BASE}/api/health`);
