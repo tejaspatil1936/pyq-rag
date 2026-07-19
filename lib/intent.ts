@@ -79,9 +79,10 @@ const FREQUENCY =
 const TOPIC_PATTERN =
   /(?:asked|asks?|come(?:s)?\s+up|appear(?:s)?|questions?)\s+(?:about|on|from|regarding|related\s+to|cover(?:ing)?|for)\s+(.+?)[?.!\s]*$/i;
 
-// Passive frequency phrasing: "how often is X asked", "how many times did X appear".
+// Passive frequency phrasing: "how often is X asked", "how many times did X
+// appear". Typo-tolerant leading "how" to match COUNT_RE.
 const TOPIC_PATTERN_PASSIVE =
-  /how\s+(?:often|many\s+times)\s+(?:is|was|were|does|do|did|has|have)\s+(.+?)\s+(?:been\s+)?(?:asked|appear|come|covered)/i;
+  /\bh?ow\s+(?:often|many\s+times?)\s+(?:is|was|were|does|do|did|has|have)\s+(.+?)\s+(?:been\s+)?(?:asked|appear|come|covered)/i;
 
 // Strategy/plan requests — checked BEFORE the explain-opener because
 // "how to study" starts explain-like but is not a content question.
