@@ -68,6 +68,23 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
           </span>
         )}
       </div>
+      {/* The nonzero path renders the structured list instead of res.answer,
+          so the topic-total lead must be rendered explicitly here — the
+          zero path gets it via the answer markdown. */}
+      {res.intent === "TOPIC_ANALYTICS" &&
+        (res.clusters?.length ?? 0) > 0 &&
+        res.topic_exam_count != null &&
+        res.total_exams != null && (
+          <p className="mb-2 text-sm text-slate-200" data-testid="topic-total-lead">
+            <span className="font-semibold">{res.topic}</span> appeared in{" "}
+            <span className="font-bold text-emerald-300">{res.topic_exam_count}</span> of{" "}
+            {res.total_exams} exams
+            {res.filters
+              ? ` (${[res.filters.exam_type, res.filters.year].filter(Boolean).join(" ")} only)`
+              : ""}
+            .
+          </p>
+        )}
       {(res.clusters?.length ?? 0) === 0 ? (
         <div className="prose prose-sm prose-invert max-w-none">
           <ReactMarkdown remarkPlugins={[remarkGfm]}>{res.answer}</ReactMarkdown>
