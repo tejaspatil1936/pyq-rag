@@ -243,6 +243,10 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(followUp.body.intent).toBe("SEMANTIC");
     expect(followUp.body.no_answer).toBeUndefined();
     expect((followUp.body.citations ?? []).length).toBeGreaterThan(0);
+    // resolution happens first — never a contradictory non-coverage preamble
+    expect(followUp.body.answer).not.toMatch(
+      /^The retrieved previous-year questions don'?t cover/i,
+    );
   }, 120_000);
 
   it("cache: the same question twice hits the cache, flagged and faster", async () => {

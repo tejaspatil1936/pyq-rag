@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { guardOutput } from "../lib/answer";
+import { guardOutput, stripContradictoryPreamble } from "../lib/answer";
 import { classifyHeuristic } from "../lib/intent";
 import { normalizeQuery } from "../lib/normalize";
 import { prefilterAbuse } from "../lib/scope";
@@ -51,6 +51,27 @@ describe("guardOutput", () => {
     const g = guardOutput(answer, "Computer Networks", "tcp vs udp");
     expect(g.flagged).toBe(false);
     expect(g.answer).toBe(answer);
+  });
+});
+
+describe("stripContradictoryPreamble", () => {
+  it("drops the non-coverage opener when a real answer follows it", () => {
+    const s =
+      "The retrieved previous-year questions don't cover this topic. The subnetting question [1] asks you to divide a /24 network into four subnets, which you solve by borrowing two host bits [2] and computing each range [3].";
+    const out = stripContradictoryPreamble(s);
+    expect(out).not.toMatch(/^The retrieved previous-year questions/);
+    expect(out).toMatch(/^The subnetting question/);
+  });
+
+  it("keeps a genuine refusal untouched", () => {
+    const s =
+      "The retrieved previous-year questions don't cover this topic. They focus on hashing [1].";
+    expect(stripContradictoryPreamble(s)).toMatch(/^The retrieved previous-year questions/);
+  });
+
+  it("leaves normal answers alone", () => {
+    const s = "TCP is connection-oriented [1] while UDP is not [2].";
+    expect(stripContradictoryPreamble(s)).toBe(s);
   });
 });
 
