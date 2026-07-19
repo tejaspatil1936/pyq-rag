@@ -66,16 +66,27 @@ _THINKING_FALLBACKS = [
 _thinking_idx = 0
 
 
+LIST_MODELS_URL = "https://generativelanguage.googleapis.com/v1beta/models"
+
+
 class GeminiError(Exception):
     """Permanent failure for this input; the paper is marked failed, run continues."""
 
 
-class ModelHasNoFreeTier(Exception):
-    """The configured GEMINI_MODEL has zero free-tier quota (429 with limit: 0).
+class ModelUnusable(Exception):
+    """The configured GEMINI_MODEL cannot serve this pipeline at all.
 
-    Rotating keys cannot help — the model itself is retired or paid-only, so
-    the whole run must abort loudly instead of benching keys one by one.
+    Rotating keys cannot help, so the whole run must abort loudly and tell
+    the operator to fix GEMINI_MODEL (valid ids: GET LIST_MODELS_URL).
     """
+
+
+class ModelHasNoFreeTier(ModelUnusable):
+    """429 with a quota limit of 0: the model is retired or paid-only."""
+
+
+class ModelNotFound(ModelUnusable):
+    """404: the model id does not exist (typo, or removed from the API)."""
 
 
 def _parse_429(body):
@@ -172,7 +183,7 @@ def _call(km, prompt):
                 )
                 raise ModelHasNoFreeTier(
                     f"MODEL HAS NO FREE TIER — check GEMINI_MODEL "
-                    f"(currently {config.GEMINI_MODEL!r})"
+                    f"(currently {config.GEMINI_MODEL!r}) against {LIST_MODELS_URL}"
                 )
             if any("perday" in q.lower() for q in quota_ids) or (not quota_ids and "PerDay" in body):
                 log.warning(
@@ -187,6 +198,15 @@ def _call(km, prompt):
                 )
                 km.mark_rate_limited(idx, retry_s)
             continue
+
+        if resp.status_code == 404:
+            log.error(
+                "model %r not found — raw body: %s", config.GEMINI_MODEL, resp.text[:500]
+            )
+            raise ModelNotFound(
+                f"MODEL NOT FOUND (HTTP 404) — check GEMINI_MODEL "
+                f"(currently {config.GEMINI_MODEL!r}) against {LIST_MODELS_URL}"
+            )
 
         if resp.status_code in (500, 502, 503, 504):
             log.warning("key[%d] server error %d, retrying", idx, resp.status_code)
@@ -247,6 +267,18 @@ def _parse_questions(raw):
             "sub_label": label,
         })
     return out
+
+
+def preflight(km):
+    """Validate GEMINI_MODEL with one tiny call before touching any paper.
+
+    A wrong or retired model id fails here in seconds (ModelNotFound /
+    ModelHasNoFreeTier) instead of surfacing mid-batch, and the thinking
+    fallback ladder settles before real extraction starts.
+    """
+    log.info("preflight: checking model %r", config.GEMINI_MODEL)
+    _, idx = _call(km, 'Reply with the JSON array ["ok"] and nothing else.')
+    log.info("preflight passed via key[%d] (model %r)", idx, config.GEMINI_MODEL)
 
 
 def extract_questions(km, paper_text):

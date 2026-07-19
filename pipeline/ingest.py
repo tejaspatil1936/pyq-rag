@@ -27,7 +27,7 @@ from psycopg2.extras import execute_values
 import config
 import db
 from extract_text import extract_text
-from gemini import ModelHasNoFreeTier, extract_questions
+from gemini import GeminiError, ModelUnusable, extract_questions, preflight
 from key_manager import AllKeysExhausted, KeyManager
 
 log = logging.getLogger("ingest")
@@ -111,6 +111,17 @@ def main():
     args = parser.parse_args()
 
     km = KeyManager()
+    try:
+        preflight(km)
+    except AllKeysExhausted as exc:
+        # Nothing wrong with the model; quotas are just spent. Exit cleanly
+        # so the next cron run resumes.
+        log.warning("preflight: %s — exiting cleanly", exc)
+        return
+    except (ModelUnusable, GeminiError) as exc:
+        log.error("preflight failed: %s", exc)
+        sys.exit(1)
+
     conn = db.get_conn()
     done = failed = 0
     try:
@@ -130,8 +141,8 @@ def main():
                 except AllKeysExhausted as exc:
                     log.warning("stopping cleanly: %s", exc)
                     break
-                except ModelHasNoFreeTier as exc:
-                    # Misconfigured/retired model: no key rotation can help.
+                except ModelUnusable as exc:
+                    # Retired or removed model: no key rotation can help.
                     # Fail the job loudly so the workflow run goes red.
                     log.error("aborting run: %s", exc)
                     sys.exit(1)
