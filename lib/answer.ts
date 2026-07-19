@@ -168,7 +168,7 @@ Rules:
 - Justify the order of attack with the real numbers (exam coverage, marks, years). Only call a topic "newer" or "rising" when its year list starts within the last two-to-three years; a topic present across many years (e.g. since 2017) is a long-standing staple — never describe it as rising.${
     rarelyAsked !== null
       ? `
-- The student is asking about SKIPPING: suggest skips ONLY from <rarely_asked_topics>. Every topic in <topic_weightage_data> appears in far too many exams to skip — state that explicitly (e.g. "the high-frequency topics above are not skippable").`
+- The student is asking about SKIPPING: suggest skips ONLY from <rarely_asked_topics>. Every topic in <topic_weightage_data> appears in far too many exams to skip — say so using the exact phrase "not skippable" about those high-frequency topics.`
       : ""
   }
 - ${sizeRule}

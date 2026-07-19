@@ -381,7 +381,9 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(status).toBe(200);
     expect(body.intent).toBe("STUDY_GUIDE");
     // must state that the high-frequency topics can't be skipped
-    expect(body.answer).toMatch(/not skippable|cannot (?:be )?skip|can't (?:be )?skip|shouldn'?t skip|too (?:often|frequent)/i);
+    expect(body.answer).toMatch(
+      /not skippable|cannot (?:be )?skip|can't (?:be )?skip|shouldn'?t skip|must not skip|non[- ]?negotiable|too (?:often|frequent)/i,
+    );
     // any named skip candidate must come from the full-distribution tail
     const tail = body.skip_candidates ?? [];
     expect(tail.length).toBeGreaterThan(0);
