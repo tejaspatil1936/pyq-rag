@@ -79,7 +79,16 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
           </p>
           <ol className="space-y-3">
             {res.clusters!.map((c, i) => (
-              <ClusterItem key={c.cluster_id} cluster={c} rank={i + 1} />
+              <ClusterItem
+                key={c.cluster_id}
+                cluster={c}
+                rank={i + 1}
+                filterNote={
+                  res.filters
+                    ? [res.filters.exam_type, res.filters.year].filter(Boolean).join(" ")
+                    : null
+                }
+              />
             ))}
           </ol>
         </>
@@ -200,10 +209,22 @@ function TopicItem({
   );
 }
 
-function ClusterItem({ cluster: c, rank }: { cluster: ClusterResult; rank: number }) {
+function ClusterItem({
+  cluster: c,
+  rank,
+  filterNote = null,
+}: {
+  cluster: ClusterResult;
+  rank: number;
+  filterNote?: string | null;
+}) {
   const [expanded, setExpanded] = useState(false);
   const span = yearSpan(c.years_spanned);
   const long = c.representative_text.length > 180;
+  // Filtered views must never show an all-time range next to a filtered
+  // count — label both sides explicitly instead.
+  const countChip = `${c.exam_count} exam${c.exam_count === 1 ? "" : "s"}${filterNote ? ` in ${filterNote}` : ""}`;
+  const yearsChip = filterNote ? (span ? `asked since ${span.split("–")[0]}` : null) : span;
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900 p-3 shadow-sm">
       <div className="flex gap-2.5">
@@ -227,9 +248,11 @@ function ClusterItem({ cluster: c, rank }: { cluster: ClusterResult; rank: numbe
           )}
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
             <span className="rounded-full bg-emerald-500/15 px-2 py-0.5 font-semibold text-emerald-300">
-              {c.exam_count} exam{c.exam_count === 1 ? "" : "s"}
+              {countChip}
             </span>
-            {span && <span className="rounded-full bg-slate-800 px-2 py-0.5 text-slate-300">{span}</span>}
+            {yearsChip && (
+              <span className="rounded-full bg-slate-800 px-2 py-0.5 text-slate-300">{yearsChip}</span>
+            )}
             {c.topic_similarity != null && (
               <span className="rounded-full bg-amber-500/10 px-2 py-0.5 text-amber-300">
                 {Math.round(c.topic_similarity * 100)}% match

@@ -27,6 +27,7 @@ export function formatAnalyticsAnswer(
     `**Most frequently asked questions in ${subject}${filterNote ? ` — ${filterNote} papers only` : ""}** (counted over distinct exams; repeated uploads of the same paper count once):`,
     clusters,
     sources,
+    filterNote,
   );
 }
 
@@ -46,6 +47,7 @@ export function formatTopicAnalyticsAnswer(
     `The ${clusters.length} matching question group${clusters.length === 1 ? "" : "s"}, ranked by how often they were asked:`,
     clusters,
     sources,
+    stats.filterNote ?? null,
   )}`;
 }
 
@@ -53,6 +55,7 @@ function formatClusterList(
   heading: string,
   clusters: ClusterRow[],
   sources: Map<number, PaperSource[]>,
+  filterNote: string | null = null,
 ): string {
   const lines = [heading, ""];
   clusters.forEach((c, i) => {
@@ -60,8 +63,16 @@ function formatClusterList(
       c.representative_text.length > 220
         ? `${c.representative_text.slice(0, 220)}…`
         : c.representative_text;
+    // Under a filter, the count is within-filter — label it that way and
+    // mark the all-time span explicitly so the two can't be conflated.
+    const firstYear = c.years_spanned?.split(",")[0]?.trim();
+    const yearsPart = filterNote
+      ? firstYear
+        ? ` · asked since ${firstYear}`
+        : ""
+      : formatYears(c.years_spanned);
     lines.push(
-      `${i + 1}. "${text}" — asked in **${c.exam_count}** exam${c.exam_count === 1 ? "" : "s"}${formatYears(c.years_spanned)}`,
+      `${i + 1}. "${text}" — asked in **${c.exam_count}** exam${c.exam_count === 1 ? "" : "s"}${filterNote ? ` in ${filterNote}` : ""}${yearsPart}`,
     );
     const src = sources.get(c.cluster_id) ?? [];
     if (src.length > 0) {

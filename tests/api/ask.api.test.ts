@@ -339,7 +339,8 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.intent).toBe("ANALYTICS");
     expect(body.filters?.year).toBe("2024");
     expect((body.clusters ?? []).length).toBeGreaterThan(0); // CN has 2024 papers
-    expect(body.answer).toContain("2024");
+    // rows must label the within-filter count, not show all-time chips bare
+    expect(body.answer).toMatch(/exams? in 2024|exam in 2024/i);
   });
 
   it("exam-type filter: 'most asked in MSE' counts only MSE exams", async () => {

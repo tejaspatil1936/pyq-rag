@@ -3,6 +3,7 @@ import { afterAll, beforeAll, describe, expect, it } from "vitest";
 import { clusterSources, topClusters } from "../lib/analytics";
 import { closePool, getPool } from "../lib/db";
 import { listSubjects } from "../lib/subjects";
+import { totalExams } from "../lib/topics";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
 
@@ -65,6 +66,36 @@ describe.skipIf(!hasDb)("cluster analytics (live DB)", () => {
       [clusters.map((c) => c.cluster_id), subject],
     );
     expect(res.rows[0].leaked).toBe(0);
+  });
+
+  it("year filter narrows exam counts, never leaks all-time numbers", async () => {
+    const cn = "Computer Networks";
+    const [filtered, unfiltered, total2024] = await Promise.all([
+      topClusters(cn, 10, { year: "2024" }),
+      topClusters(cn, 50),
+      totalExams(cn, { year: "2024" }),
+    ]);
+    expect(filtered.length).toBeGreaterThan(0);
+    expect(total2024).toBeGreaterThan(0);
+    const allTime = new Map(unfiltered.map((c) => [c.cluster_id, c.exam_count]));
+    for (const c of filtered) {
+      // a within-2024 count can never exceed the number of 2024 exams…
+      expect(c.exam_count).toBeLessThanOrEqual(total2024);
+      // …nor the same cluster's all-time count
+      const at = allTime.get(c.cluster_id);
+      if (at !== undefined) expect(c.exam_count).toBeLessThanOrEqual(at);
+    }
+    // and every filtered cluster must actually contain a 2024 question
+    const res = await getPool().query(
+      `SELECT COUNT(*)::int AS bad
+         FROM clusters c
+        WHERE c.id = ANY($1::int[])
+          AND NOT EXISTS (
+            SELECT 1 FROM questions q JOIN papers p ON p.id = q.paper_id
+             WHERE q.cluster_id = c.id AND p.year = '2024')`,
+      [filtered.map((c) => c.cluster_id)],
+    );
+    expect(res.rows[0].bad).toBe(0);
   });
 
   it("unknown subject yields zero clusters, not an error", async () => {
