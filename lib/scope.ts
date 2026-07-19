@@ -33,3 +33,18 @@ export function prefilterAbuse(question: string): boolean {
 export function refusalMessage(subject: string): string {
   return `I can only help with **${subject}** previous-year papers — try asking about its repeated questions, a specific topic, or how to approach a question from the papers.`;
 }
+
+/**
+ * Bare "?", "hi" and similar pokes: not abuse, just someone knocking —
+ * answer with a friendly capabilities nudge, never the refusal.
+ */
+const GREETING_RE =
+  /^(?:[\s?!.…~-]+|(?:hi+|hii+|hey+|hello+|helo+|yo|sup|hola|namaste|hy|test|ping|ok(?:ay)?|good\s+(?:morning|afternoon|evening))[\s?!.…]*)$/i;
+
+export function isGreeting(question: string): boolean {
+  return GREETING_RE.test(question.trim());
+}
+
+export function greetingMessage(subject: string): string {
+  return `Hey! 👋 I'm your **${subject}** past-paper assistant. Try one of these:\n\n- "most important topics"\n- "what usually gets asked about *<topic>*"\n- "how should I study for the exam"\n- or ask me to explain any concept from the papers`;
+}
