@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { guardOutput, stripContradictoryPreamble } from "../lib/answer";
+import { guardOutput, stripContradictoryPreamble, stripInternalNames } from "../lib/answer";
 import { classifyHeuristic } from "../lib/intent";
 import { normalizeQuery } from "../lib/normalize";
 import { prefilterAbuse } from "../lib/scope";
@@ -72,6 +72,28 @@ describe("stripContradictoryPreamble", () => {
   it("leaves normal answers alone", () => {
     const s = "TCP is connection-oriented [1] while UDP is not [2].";
     expect(stripContradictoryPreamble(s)).toBe(s);
+  });
+});
+
+describe("stripInternalNames", () => {
+  it("replaces leaked data-block names with plain English", () => {
+    expect(
+      stripInternalNames("Based on topic_weightage_data, start with linked lists."),
+    ).toBe("Based on the exam data, start with linked lists.");
+    expect(stripInternalNames("Per rarely_asked_topics, you can drop B-trees.")).toBe(
+      "Per the rarely-asked topics, you can drop B-trees.",
+    );
+  });
+
+  it("removes leaked tag markup entirely", () => {
+    expect(stripInternalNames("As <topic_weightage_data> shows, focus here.")).toBe(
+      "As shows, focus here.",
+    );
+  });
+
+  it("leaves normal prose untouched, including newlines", () => {
+    const s = "Start with hashing.\n\nThen do trees.";
+    expect(stripInternalNames(s)).toBe(s);
   });
 });
 

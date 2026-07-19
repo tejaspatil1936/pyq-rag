@@ -173,6 +173,7 @@ Rules:
   }
 - ${sizeRule}
 - Answer as flowing prose in markdown (a short list is fine as support, but lead and close conversationally). No tables.
+- Never mention internal names like "topic_weightage_data" or "rarely_asked_topics" — refer to them in plain English ("the exam data", "the rarely-asked topics").
 - Keep it under ~250 words.
 
 <topic_weightage_data>
@@ -272,6 +273,26 @@ export function guardOutput(
     return { answer: refusalMessage(subject), flagged: true };
   }
   return { answer, flagged: false };
+}
+
+// Internal prompt/data vocabulary that must never surface in user-facing
+// prose, with plain-English stand-ins for the backup scrub.
+const INTERNAL_NAMES: [RegExp, string][] = [
+  [/<\/?(?:topic_weightage_data|rarely_asked_topics|retrieved_questions|student_question|conversation)>/gi, ""],
+  [/\btopic_weightage_data\b/gi, "the exam data"],
+  [/\brarely_asked_topics\b/gi, "the rarely-asked topics"],
+  [/\bretrieved_questions\b/gi, "the retrieved questions"],
+  [/\bstudent_question\b/gi, "your question"],
+  [/\bexam_count\b/gi, "exam count"],
+  [/\btotal_marks\b/gi, "total marks"],
+  [/\bskip_candidates\b/gi, "the skip candidates"],
+];
+
+/** Backup scrub: the prompt forbids internal names, but leaks still die here. */
+export function stripInternalNames(answer: string): string {
+  let out = answer;
+  for (const [re, sub] of INTERNAL_NAMES) out = out.replace(re, sub);
+  return out.replace(/ {2,}/g, " ");
 }
 
 /**
