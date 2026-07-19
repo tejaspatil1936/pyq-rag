@@ -131,8 +131,9 @@ export function isSkipQuery(question: string): boolean {
 }
 
 // "how many times / how often" phrasings must always land on the
-// TOPIC_ANALYTICS path — it is the only one that leads with the exam total.
-const COUNT_RE = /how\s+(?:many\s+times|often)|kitni\s+baar|number\s+of\s+times/i;
+// TOPIC_ANALYTICS path. Typo-tolerant: "ow many times" (dropped h) and
+// "how many time" (dropped s) still count.
+const COUNT_RE = /\bh?ow\s+(?:many\s+times?|often)\b|kitni\s+baar|number\s+of\s+times/i;
 
 /** True when nothing meaningful remains once filter/stop words are removed
  *  ("last year's ESE" -> ""): the query IS the filter, i.e. an analytics ask. */

@@ -17,6 +17,7 @@ import {
   guardOutput,
   normalizeCitations,
   stripContradictoryPreamble,
+  stripInternalNames,
   synthesizeAnswer,
   synthesizeStudyGuide,
 } from "@/lib/answer";
@@ -291,7 +292,7 @@ export async function POST(req: Request) {
       }
       return respond({
         intent,
-        answer: guardedPlan.answer,
+        answer: stripInternalNames(guardedPlan.answer),
         topics: topicsPayload,
         total_exams: total,
         ...(tail !== null
@@ -307,12 +308,18 @@ export async function POST(req: Request) {
       const topicVec = await embedQuery(topicPhrase);
       const clusters = await topicClusters(subject, topicVec, TOP_K, filters);
       if (clusters.length === 0) {
+        // The total leads UNCONDITIONALLY — a zero-match topic query still
+        // opens with "appeared in 0 of M exams".
+        const total = await totalExams(subject, filters);
+        const zeroLead = `**${topicPhrase}** appeared in **0** of ${total} ${subject} exams${note ? ` (${note} only)` : ""}.`;
         if (note) {
           const years = await availableYears(subject);
           return respond({
             intent,
             topic: topicPhrase,
-            answer: `Nothing about **${topicPhrase}** in the **${subject}** ${note} papers — the archive may simply not have those papers.${years.length > 0 ? ` Years available: ${years.join(", ")}.` : ""}`,
+            topic_exam_count: 0,
+            total_exams: total,
+            answer: `${zeroLead} The archive may simply not have those papers.${years.length > 0 ? ` Years available: ${years.join(", ")}.` : ""}`,
             clusters: [],
             filters: { year, exam_type: examType },
           });
@@ -320,7 +327,9 @@ export async function POST(req: Request) {
         return respond({
           intent,
           topic: topicPhrase,
-          answer: `No question clusters about **${topicPhrase}** found in **${subject}**. Either it isn't asked in this subject's papers, or the phrasing differs — try an open-ended question instead.`,
+          topic_exam_count: 0,
+          total_exams: total,
+          answer: `${zeroLead} Either it isn't asked in this subject's papers, or the phrasing differs — try an open-ended question instead.`,
           clusters: [],
         });
       }
@@ -430,6 +439,7 @@ export async function POST(req: Request) {
     // preamble), then citation-shape normalization — before any client
     // ever sees the text. Worked solutions get the verification caution.
     let answer = stripContradictoryPreamble(guarded.answer);
+    answer = stripInternalNames(answer);
     answer = normalizeCitations(answer, citations.length);
     if (solving) answer += SOLUTION_CAUTION;
     return respond({ intent, answer, citations });

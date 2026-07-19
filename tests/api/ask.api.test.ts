@@ -312,6 +312,8 @@ describe(`POST /api/ask @ ${BASE}`, () => {
       body.answer!.toLowerCase().includes(t.topic.toLowerCase()),
     );
     expect(named.length).toBeGreaterThan(0);
+    // internal data-block vocabulary must never leak into prose
+    expect(body.answer).not.toMatch(/topic_weightage_data|rarely_asked_topics|<\/?[a-z_]+>/i);
     studyPlan1st = body.answer!;
   }, 120_000);
 
@@ -388,6 +390,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
       body.answer!.toLowerCase().includes(t.topic.toLowerCase()),
     );
     expect(namedFromTail.length).toBeGreaterThan(0);
+    expect(body.answer).not.toMatch(/topic_weightage_data|rarely_asked_topics|<\/?[a-z_]+>/i);
     // and never recommends skipping a top-3 topic
     const topNames = (body.topics ?? []).slice(0, 3).map((t) => t.topic.toLowerCase());
     for (const sentence of body.answer!.split(/(?<=[.!?])\s+/)) {
@@ -419,7 +422,18 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.intent).toBe("TOPIC_ANALYTICS");
     expect(body.topic_exam_count).toBeGreaterThan(0);
     expect(body.total_exams).toBeGreaterThan(0);
-    expect(body.answer).toMatch(/appeared in \*\*\d+\*\* of \d+/);
+    expect(body.answer).toMatch(/^\*\*.+\*\* appeared in \*\*\d+\*\* of \d+/); // line one
+  });
+
+  it("typo'd count query still leads with the exam total", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({
+      subject,
+      question: "ow many times has hashing been asked",
+    });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("TOPIC_ANALYTICS");
+    expect(body.answer).toMatch(/^\*\*.+\*\* appeared in \*\*\d+\*\* of \d+/);
   });
 
   it("GET /api/health reports DB and key status", async () => {

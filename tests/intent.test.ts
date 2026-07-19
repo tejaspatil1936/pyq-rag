@@ -114,6 +114,10 @@ describe("classifyHeuristic", () => {
     expect(coerceClassification(cls({ intent: "ANALYTICS" }), "how many times were papers repeated").intent).toBe(
       "ANALYTICS",
     );
+    // typo tolerance: dropped leading "h" must not lose the count path
+    const typo = coerceClassification(cls({}), "ow many times has hashing been asked");
+    expect(typo.intent).toBe("TOPIC_ANALYTICS");
+    expect(typo.topic).toMatch(/hashing/i);
   });
 
   it("flags solving intent for worked-problem requests", () => {

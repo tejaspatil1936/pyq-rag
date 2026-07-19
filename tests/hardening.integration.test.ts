@@ -35,6 +35,20 @@ describe.skipIf(!hasDb)("quota-exhausted behavior (live DB, mocked Gemini)", () 
     await closePool();
   });
 
+  it("zero-match topic queries still lead with the exam total", async () => {
+    // Heuristic routes this to TOPIC_ANALYTICS; the nonsense topic matches
+    // no clusters — the answer must still open with "appeared in 0 of M".
+    const res = await ask({
+      subject: "Computer Networks",
+      question: "what usually gets asked about flurbification theory",
+    });
+    expect(res.status).toBe(200);
+    const body = await res.json();
+    expect(body.intent).toBe("TOPIC_ANALYTICS");
+    expect(body.topic_exam_count).toBe(0);
+    expect(body.answer).toMatch(/^\*\*.+\*\* appeared in \*\*0\*\* of \d+ Computer Networks exams/);
+  });
+
   it("analytics keeps working with Gemini fully down", async () => {
     const res = await ask({
       subject: "Computer Networks",
