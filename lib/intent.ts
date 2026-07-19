@@ -20,6 +20,12 @@ export interface Classification {
   topN: number | null;
   /** True when the student wants a specific problem solved/worked through. */
   solving: boolean;
+  /** True when the student asks to predict/forecast the upcoming paper. */
+  predictive: boolean;
+  /** Explicit year filter ("questions that came in 2024"), else null. */
+  year: string | null;
+  /** Explicit exam-type filter (ESE/MSE/CAT), else null. */
+  examType: string | null;
 }
 
 export interface HistoryTurn {
@@ -52,9 +58,12 @@ Also produce:
 "rewritten": the question restated as a standalone query, resolving references like "the second one" using the conversation; identical to the question when no context is needed.
 "top_n": the integer if the student asked for a specific number of topics/questions ("5 important topics" -> 5), else null.
 "solving": true only when the student wants a specific exam problem solved or worked through step by step.
+"predictive": true when the student asks to predict, forecast, or guess what will come in the upcoming/this year's paper ("predict what will come this year", "what will they ask").
+"year": the 4-digit year if the student filters by a year ("questions that came in 2024" -> "2024"; resolve "last year" to ${new Date().getFullYear() - 1}), else null.
+"exam_type": "ESE", "MSE" or "CAT" if the student filters by exam type ("most asked in MSE" -> "MSE"), else null.
 
 Reply with only one JSON object:
-{"in_scope": true, "intent": "ANALYTICS" | "TOPIC_WEIGHTAGE" | "STUDY_GUIDE" | "TOPIC_ANALYTICS" | "SEMANTIC", "topic": "<topic phrase or null>", "rewritten": "<standalone question>", "top_n": <int or null>, "solving": <bool>}
+{"in_scope": true, "intent": "ANALYTICS" | "TOPIC_WEIGHTAGE" | "STUDY_GUIDE" | "TOPIC_ANALYTICS" | "SEMANTIC", "topic": "<topic phrase or null>", "rewritten": "<standalone question>", "top_n": <int or null>, "solving": <bool>, "predictive": <bool>, "year": "<YYYY or null>", "exam_type": "<ESE|MSE|CAT or null>"}
 or
 {"in_scope": false}`;
 }
@@ -88,11 +97,30 @@ const TOP_N_RE =
 const SOLVING_RE =
   /\bsolve\b|work\s+(?:through|out)|step[-\s]?by[-\s]?step\s+(?:solution|answer)|calculate\s|find\s+the\s+value|numerical\s+(?:on|problem)/i;
 
+// Fortune-telling phrasings: answered with frequency data behind an explicit
+// "past frequency cannot predict future papers" disclaimer.
+const PREDICTIVE_RE =
+  /\bpredicts?\b|\bforecast|what\s+will\s+(?:come|appear|be\s+asked|they\s+ask)|likely\s+to\s+(?:come|appear|be\s+asked)|guess\s+(?:the\s+)?(?:paper|questions?)|will\s+(?:come|be\s+asked)\s+this\s+year|aa(?:ye|e)ga\b/i;
+
 function extractTopN(q: string): number | null {
   const m = TOP_N_RE.exec(q);
   if (!m) return null;
   const n = Number(m[1] ?? m[2]);
   return Number.isInteger(n) && n >= 1 && n <= 25 ? n : null;
+}
+
+/** High-precision year filter: an explicit 4-digit year, or "last year". */
+export function extractYear(q: string): string | null {
+  const m = /\b(20\d{2})\b/.exec(q);
+  if (m) return m[1];
+  if (/\blast\s+year/i.test(q)) return String(new Date().getFullYear() - 1);
+  return null;
+}
+
+/** Exam-type filter: standalone ESE/MSE/CAT token. */
+export function extractExamType(q: string): string | null {
+  const m = /\b(ese|mse|cat)\b/i.exec(q);
+  return m ? m[1].toUpperCase() : null;
 }
 
 /**
@@ -104,11 +132,16 @@ function extractTopN(q: string): number | null {
  */
 export function classifyHeuristic(question: string): Classification {
   const q = question.trim();
+  const year = extractYear(q);
+  const examType = extractExamType(q);
   const base = {
     inScope: !prefilterAbuse(q),
     rewritten: null,
     topN: extractTopN(q),
     solving: SOLVING_RE.test(q),
+    predictive: PREDICTIVE_RE.test(q),
+    year,
+    examType,
   };
   if (STUDY_GUIDE_RE.test(q)) return { ...base, intent: "STUDY_GUIDE", topic: null };
   if (WEIGHTAGE_RE.test(q)) return { ...base, intent: "TOPIC_WEIGHTAGE", topic: null };
@@ -123,6 +156,11 @@ export function classifyHeuristic(question: string): Classification {
   // Checked after topic extraction, and also rescues frequency questions
   // that start explain-like ("What are the most frequently asked questions?").
   if (FREQUENCY.test(q)) return { ...base, intent: "ANALYTICS", topic: null };
+  // A year/exam-type filter next to paper-ish words is a frequency ask even
+  // without a frequency keyword: "questions that came in 2024".
+  if ((year || examType) && /\bquestions?\b|\bpapers?\b|\basked\b|\bcame\b/i.test(q)) {
+    return { ...base, intent: "ANALYTICS", topic: null };
+  }
   return { ...base, intent: "SEMANTIC", topic: null };
 }
 
@@ -146,6 +184,9 @@ export async function classifyIntent(
       rewritten?: unknown;
       top_n?: unknown;
       solving?: unknown;
+      predictive?: unknown;
+      year?: unknown;
+      exam_type?: unknown;
     };
     if (parsed?.in_scope === false) {
       return {
@@ -155,6 +196,9 @@ export async function classifyIntent(
         rewritten: null,
         topN: null,
         solving: false,
+        predictive: false,
+        year: null,
+        examType: null,
       };
     }
     const intent = String(parsed?.intent ?? "").toUpperCase();
@@ -162,19 +206,27 @@ export async function classifyIntent(
     const rawN = Number(parsed?.top_n);
     const topN = Number.isInteger(rawN) && rawN >= 1 && rawN <= 25 ? rawN : null;
     const solving = parsed?.solving === true;
+    const predictive = parsed?.predictive === true || PREDICTIVE_RE.test(question);
+    const yearStr = String(parsed?.year ?? "");
+    const year = /^20\d{2}$/.test(yearStr) ? yearStr : extractYear(question);
+    const examStr = String(parsed?.exam_type ?? "").toUpperCase();
+    const examType = ["ESE", "MSE", "CAT"].includes(examStr)
+      ? examStr
+      : extractExamType(question);
+    const shared = { rewritten, topN, solving, predictive, year, examType };
     if (
       intent === "ANALYTICS" ||
       intent === "SEMANTIC" ||
       intent === "TOPIC_WEIGHTAGE" ||
       intent === "STUDY_GUIDE"
     ) {
-      return { inScope: true, intent, topic: null, rewritten, topN, solving };
+      return { inScope: true, intent, topic: null, ...shared };
     }
     if (intent === "TOPIC_ANALYTICS") {
       const topic = String(parsed?.topic ?? "").trim();
       // A topic-analytics verdict without a topic can't scope anything —
       // the whole question works as the similarity probe instead.
-      return { inScope: true, intent, topic: topic || question, rewritten, topN, solving };
+      return { inScope: true, intent, topic: topic || question, ...shared };
     }
   } catch (err) {
     if (!(err instanceof GeminiUnavailable)) console.error("intent classification failed:", err);
