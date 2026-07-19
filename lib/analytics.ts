@@ -30,6 +30,52 @@ const EXAM_SESSION_SQL = `COALESCE(substring(upper(p.file_name) from '(JAN|FEB|M
 
 export const EXAM_KEY_SQL = `(p.standard_subject, COALESCE(p.year, ''), ${EXAM_SESSION_SQL}, COALESCE(p.exam_type, ''), COALESCE(p.semester, ''), COALESCE(p.branch, ''))`;
 
+/** Optional year / exam-type narrowing for the frequency paths. */
+export interface ExamFilters {
+  year?: string | null;
+  examType?: string | null;
+}
+
+// Appended to the WHERE clause of every filtered aggregate; the two extra
+// parameters are always bound (NULL = no filter).
+export const FILTER_SQL = (yearParam: string, examParam: string) =>
+  ` AND (${yearParam}::text IS NULL OR p.year = ${yearParam})
+    AND (${examParam}::text IS NULL OR UPPER(COALESCE(p.exam_type, '')) = ${examParam})`;
+
+/** "MSE 2024" / "2024" / "ESE" — for headings and honest-empty messages. */
+export function filterLabel(filters: ExamFilters): string | null {
+  const parts = [filters.examType, filters.year].filter(Boolean);
+  return parts.length > 0 ? parts.join(" ") : null;
+}
+
+/** Distinct years present for a subject — shown when a year filter misses. */
+export async function availableYears(subject: string): Promise<string[]> {
+  const res = await getPool().query(
+    `SELECT DISTINCT p.year FROM papers p
+      WHERE p.standard_subject = $1 AND p.status = 'done'
+        AND COALESCE(p.year, '') NOT IN ('', 'Unknown')
+      ORDER BY p.year`,
+    [subject],
+  );
+  return (res.rows as { year: string }[]).map((r) => r.year);
+}
+
+/** Distinct exams touched by any of these clusters (topic totals). */
+export async function examCountForClusters(
+  clusterIds: number[],
+  filters: ExamFilters = {},
+): Promise<number> {
+  if (clusterIds.length === 0) return 0;
+  const res = await getPool().query(
+    `SELECT COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS n
+       FROM questions q
+       JOIN papers p ON p.id = q.paper_id
+      WHERE q.cluster_id = ANY($1::int[])${FILTER_SQL("$2", "$3")}`,
+    [clusterIds, filters.year ?? null, filters.examType ?? null],
+  );
+  return res.rows[0].n as number;
+}
+
 export interface PaperSource {
   file_name: string;
   year: string | null;
@@ -41,7 +87,11 @@ export interface PaperSource {
  * Ranked "most frequently asked" clusters for one subject — real SQL counts
  * over DISTINCT exams, never LLM guesses (see CLAUDE.md).
  */
-export async function topClusters(subject: string, limit = 10): Promise<ClusterRow[]> {
+export async function topClusters(
+  subject: string,
+  limit = 10,
+  filters: ExamFilters = {},
+): Promise<ClusterRow[]> {
   const res = await getPool().query(
     `SELECT c.id AS cluster_id,
             c.representative_text,
@@ -51,11 +101,11 @@ export async function topClusters(subject: string, limit = 10): Promise<ClusterR
        FROM clusters c
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
-      WHERE c.standard_subject = $1
+      WHERE c.standard_subject = $1${FILTER_SQL("$3", "$4")}
       GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
       ORDER BY exam_count DESC, c.question_count DESC, c.id
       LIMIT $2`,
-    [subject, limit],
+    [subject, limit, filters.year ?? null, filters.examType ?? null],
   );
   return res.rows as ClusterRow[];
 }
@@ -76,6 +126,7 @@ export async function topicClusters(
   subject: string,
   topicVec: number[],
   limit = 10,
+  filters: ExamFilters = {},
 ): Promise<TopicClusterRow[]> {
   const res = await getPool().query(
     `SELECT c.id AS cluster_id,
@@ -88,12 +139,19 @@ export async function topicClusters(
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $2
-        AND q.embedding IS NOT NULL
+        AND q.embedding IS NOT NULL${FILTER_SQL("$5", "$6")}
       GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
      HAVING 1 - (AVG(q.embedding) <=> $1::vector) >= $3
       ORDER BY exam_count DESC, topic_similarity DESC, c.id
       LIMIT $4`,
-    [toVectorLiteral(topicVec), subject, TOPIC_MATCH_THRESHOLD, limit],
+    [
+      toVectorLiteral(topicVec),
+      subject,
+      TOPIC_MATCH_THRESHOLD,
+      limit,
+      filters.year ?? null,
+      filters.examType ?? null,
+    ],
   );
   return res.rows as TopicClusterRow[];
 }

@@ -1,4 +1,4 @@
-import { EXAM_KEY_SQL } from "./analytics";
+import { EXAM_KEY_SQL, FILTER_SQL, type ExamFilters } from "./analytics";
 import { getPool } from "./db";
 
 export interface TopicRow {
@@ -18,13 +18,13 @@ export interface TopicQuestion {
 }
 
 /** Distinct exams with extracted questions — the denominator for "9 of 12 exams". */
-export async function totalExams(subject: string): Promise<number> {
+export async function totalExams(subject: string, filters: ExamFilters = {}): Promise<number> {
   const res = await getPool().query(
     `SELECT COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS n
        FROM papers p
        JOIN questions q ON q.paper_id = p.id
-      WHERE p.standard_subject = $1`,
-    [subject],
+      WHERE p.standard_subject = $1${FILTER_SQL("$2", "$3")}`,
+    [subject, filters.year ?? null, filters.examType ?? null],
   );
   return res.rows[0].n as number;
 }
@@ -49,6 +49,36 @@ export async function topicWeightage(subject: string, limit = 10): Promise<Topic
         AND c.topic IS NOT NULL
       GROUP BY c.topic
       ORDER BY exam_count DESC, total_marks DESC NULLS LAST, c.topic
+      LIMIT $2`,
+    [subject, limit],
+  );
+  return (res.rows as (Omit<TopicRow, "years"> & { years: string[] | null })[]).map((r) => ({
+    ...r,
+    years: [...(r.years ?? [])].sort(),
+  }));
+}
+
+/**
+ * The 1–3-exam tail of the FULL topic distribution — the only honest "you
+ * can skip this" candidates. Recommendations must never come from the
+ * bottom of a top-N slice, whose members still appear in many exams.
+ */
+export async function topicTail(subject: string, limit = 10): Promise<TopicRow[]> {
+  const res = await getPool().query(
+    `SELECT c.topic,
+            COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
+            SUM(q.marks)::int AS total_marks,
+            COUNT(DISTINCT c.id)::int AS cluster_count,
+            array_agg(DISTINCT p.year)
+              FILTER (WHERE COALESCE(p.year, '') NOT IN ('', 'Unknown')) AS years
+       FROM clusters c
+       JOIN questions q ON q.cluster_id = c.id
+       JOIN papers p ON p.id = q.paper_id
+      WHERE c.standard_subject = $1
+        AND c.topic IS NOT NULL
+      GROUP BY c.topic
+     HAVING COUNT(DISTINCT ${EXAM_KEY_SQL}) <= 3
+      ORDER BY exam_count ASC, total_marks ASC NULLS FIRST, c.topic
       LIMIT $2`,
     [subject, limit],
   );
