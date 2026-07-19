@@ -43,7 +43,8 @@ export type Intent =
   | "TOPIC_WEIGHTAGE"
   | "STUDY_GUIDE"
   | "SEMANTIC"
-  | "REFUSED";
+  | "REFUSED"
+  | "GREETING";
 
 export interface TopicResult {
   topic: string;
@@ -62,6 +63,14 @@ export interface AskResponse {
   citations?: Citation[];
   topics?: TopicResult[];
   total_exams?: number;
+  /** TOPIC_ANALYTICS: distinct exams the topic appeared in. */
+  topic_exam_count?: number;
+  /** STUDY_GUIDE: the rarely-asked tail — the only honest skip candidates. */
+  skip_candidates?: { topic: string; exam_count: number }[];
+  /** Active year/exam-type narrowing, echoed back when set. */
+  filters?: { year?: string | null; exam_type?: string | null };
+  /** True when the query asked for a prediction (answer leads with disclaimer). */
+  predictive?: boolean;
   /** True when served from the response cache. */
   cached?: boolean;
   /** True when retrieval couldn't support an answer (honest no-answer path). */

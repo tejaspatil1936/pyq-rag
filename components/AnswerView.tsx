@@ -19,6 +19,13 @@ function known(value: string | null): string | null {
 
 /** Renders one /api/ask response according to its intent. */
 export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: number }) {
+  if (res.intent === "GREETING") {
+    return (
+      <div data-testid="greeting-answer" className="prose prose-sm prose-invert max-w-none">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{res.answer}</ReactMarkdown>
+      </div>
+    );
+  }
   if (res.intent === "REFUSED") {
     return (
       <div data-testid="refused-answer">
@@ -53,6 +60,11 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
         {res.topic && (
           <span className="rounded-full bg-amber-500/15 px-2.5 py-0.5 text-xs font-medium text-amber-300">
             {res.topic}
+          </span>
+        )}
+        {res.filters && (
+          <span className="rounded-full bg-slate-800 px-2.5 py-0.5 text-xs font-medium text-slate-300">
+            {[res.filters.exam_type, res.filters.year].filter(Boolean).join(" ")} only
           </span>
         )}
       </div>
@@ -266,11 +278,15 @@ function SemanticAnswer({
   const [flashRef, setFlashRef] = useState<number | null>(null);
 
   // Turn bare [n] markers into markdown links the renderer below intercepts.
-  // Adjacent markers like [1][7] are split first — flush chips read as a
+  // Comma/and groups like [1, 5] or [1, 3, 5, and 6] expand to one chip per
+  // number; adjacent markers like [1][7] are split — flush chips read as a
   // bare "17" — and the link text avoids nested brackets ("c1", never
   // rendered: the chip shows the number parsed from the href).
-  // The (?!\() lookahead leaves real markdown links like [text](url) alone.
+  // The (?!\() lookaheads leave real markdown links like [text](url) alone.
   const processed = answer
+    .replace(/\[(\d+(?:[\s,&]+(?:and\s+)?\d+)+)\](?!\()/gi, (_m, group: string) =>
+      (group.match(/\d+/g) ?? []).map((n) => `[c${n}](#cite-${n})`).join(" "),
+    )
     .replace(/\](?=\[\d+\])/g, "] ")
     .replace(/\[(\d+)\](?!\()/g, (_m, n) => `[c${n}](#cite-${n})`);
 
