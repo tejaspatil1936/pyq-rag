@@ -49,6 +49,22 @@ Return ONLY the corrected, valid JSON array — no commentary, no markdown.
 # repeats.
 _logged_quota_keys = set()
 
+# Minimal-thinking ladder for generationConfig.thinkingConfig. Gemini 3.x are
+# thinking models; extraction needs throughput, not reasoning. Per the API
+# docs (ai.google.dev/gemini-api/docs/gemini-3): Gemini 3 controls thinking
+# via thinkingLevel (minimal|low|medium|high; "minimal" exists only on
+# 3 Flash / 3.1 Flash-Lite), the legacy thinkingBudget is still accepted on
+# some models for backward compatibility, and a request must never carry
+# both. We start from the cheapest setting and step down on a 400 rejection
+# until the model accepts one; the choice then sticks for the whole run.
+_THINKING_FALLBACKS = [
+    {"thinkingBudget": 0},         # thinking fully off, where still accepted
+    {"thinkingLevel": "minimal"},  # lowest level on 3 Flash / 3.1 Flash-Lite
+    {"thinkingLevel": "low"},      # lowest level on other Gemini 3 models
+    None,                          # give up; use the model's default
+]
+_thinking_idx = 0
+
 
 class GeminiError(Exception):
     """Permanent failure for this input; the paper is marked failed, run continues."""
@@ -109,19 +125,23 @@ def _parse_429(body):
 
 def _call(km, prompt):
     """Send one prompt, rotating keys on rate limits. Returns (text, key_index)."""
+    global _thinking_idx
     max_attempts = max(km.pool_size * 2, 4)
     for attempt in range(1, max_attempts + 1):
         idx, key = km.acquire()
+        gen_config = {
+            "temperature": 0.0,
+            "responseMimeType": "application/json",
+        }
+        if _THINKING_FALLBACKS[_thinking_idx] is not None:
+            gen_config["thinkingConfig"] = dict(_THINKING_FALLBACKS[_thinking_idx])
         try:
             resp = requests.post(
                 API_URL.format(model=config.GEMINI_MODEL),
                 params={"key": key},
                 json={
                     "contents": [{"parts": [{"text": prompt}]}],
-                    "generationConfig": {
-                        "temperature": 0.0,
-                        "responseMimeType": "application/json",
-                    },
+                    "generationConfig": gen_config,
                 },
                 timeout=config.GEMINI_TIMEOUT_S,
             )
@@ -176,6 +196,21 @@ def _call(km, prompt):
         if resp.status_code in (401, 403):
             log.error("key[%d] rejected (%d) — removing from this run", idx, resp.status_code)
             km.mark_quota_exhausted(idx)
+            continue
+
+        if (
+            resp.status_code == 400
+            and "thinking" in resp.text.lower()
+            and _thinking_idx < len(_THINKING_FALLBACKS) - 1
+        ):
+            rejected = _THINKING_FALLBACKS[_thinking_idx]
+            _thinking_idx += 1
+            fallback = _THINKING_FALLBACKS[_thinking_idx]
+            log.warning(
+                "model rejected thinking config %s; falling back to %s — body: %s",
+                rejected, fallback if fallback is not None else "model default",
+                resp.text[:300],
+            )
             continue
 
         # 400 etc: problem with the request itself, other keys won't help.
