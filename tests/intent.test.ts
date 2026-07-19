@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyHeuristic, coerceIntent } from "../lib/intent";
+import { classifyHeuristic, coerceClassification, type Classification } from "../lib/intent";
+
+const cls = (partial: Partial<Classification>): Classification => ({
+  inScope: true,
+  intent: "SEMANTIC",
+  topic: null,
+  rewritten: null,
+  topN: null,
+  solving: false,
+  predictive: false,
+  year: null,
+  examType: null,
+  ...partial,
+});
 
 // The heuristic is the resilience fallback when the Gemini classification
 // call fails; it must at least nail the obvious phrasings of all three
@@ -64,20 +77,42 @@ describe("classifyHeuristic", () => {
     );
   });
 
-  it("coerceIntent corrects known classifier drift", () => {
+  it("coerceClassification corrects known classifier drift", () => {
     // skip questions must reach the study guide (only path with the tail)
-    expect(coerceIntent("TOPIC_WEIGHTAGE", "which topics can I skip?", null, null)).toBe(
-      "STUDY_GUIDE",
-    );
+    expect(
+      coerceClassification(cls({ intent: "TOPIC_WEIGHTAGE" }), "which topics can I skip?").intent,
+    ).toBe("STUDY_GUIDE");
     // a filter-only query is an analytics ask, not semantic search
-    expect(coerceIntent("SEMANTIC", "last year's ESE", "2025", "ESE")).toBe("ANALYTICS");
-    expect(coerceIntent("SEMANTIC", "2024 papers", "2024", null)).toBe("ANALYTICS");
+    expect(
+      coerceClassification(cls({ year: "2025", examType: "ESE" }), "last year's ESE").intent,
+    ).toBe("ANALYTICS");
     // real semantic questions that merely mention a year stay semantic
     expect(
-      coerceIntent("SEMANTIC", "explain the subnetting question from the 2024 ESE paper", "2024", "ESE"),
+      coerceClassification(
+        cls({ year: "2024", examType: "ESE" }),
+        "explain the subnetting question from the 2024 ESE paper",
+      ).intent,
     ).toBe("SEMANTIC");
-    expect(coerceIntent("TOPIC_WEIGHTAGE", "most important topics", null, null)).toBe(
-      "TOPIC_WEIGHTAGE",
+    expect(
+      coerceClassification(cls({ intent: "TOPIC_WEIGHTAGE" }), "most important topics").intent,
+    ).toBe("TOPIC_WEIGHTAGE");
+  });
+
+  it("count-phrased topic questions always reach the exam-total path", () => {
+    // even if the classifier says SEMANTIC, the topic gets extracted
+    const a = coerceClassification(cls({}), "how many times has hashing been asked");
+    expect(a.intent).toBe("TOPIC_ANALYTICS");
+    expect(a.topic).toMatch(/hashing/i);
+    // an existing topic from the classifier is kept
+    const b = coerceClassification(
+      cls({ intent: "TOPIC_WEIGHTAGE", topic: "recursion" }),
+      "how often does recursion come up",
+    );
+    expect(b.intent).toBe("TOPIC_ANALYTICS");
+    expect(b.topic).toBe("recursion");
+    // count phrasing without any topic stays put
+    expect(coerceClassification(cls({ intent: "ANALYTICS" }), "how many times were papers repeated").intent).toBe(
+      "ANALYTICS",
     );
   });
 

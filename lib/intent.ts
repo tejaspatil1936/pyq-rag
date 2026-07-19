@@ -125,6 +125,15 @@ export function extractExamType(q: string): string | null {
 
 const SKIP_RE = /\bskip(?:s|ped|ping)?\b|leave\s+out|deprioriti[sz]e/i;
 
+/** Exported so the route only feeds the skip-tail to actual skip queries. */
+export function isSkipQuery(question: string): boolean {
+  return SKIP_RE.test(question);
+}
+
+// "how many times / how often" phrasings must always land on the
+// TOPIC_ANALYTICS path — it is the only one that leads with the exam total.
+const COUNT_RE = /how\s+(?:many\s+times|often)|kitni\s+baar|number\s+of\s+times/i;
+
 /** True when nothing meaningful remains once filter/stop words are removed
  *  ("last year's ESE" -> ""): the query IS the filter, i.e. an analytics ask. */
 function isFilterOnlyQuery(q: string): boolean {
@@ -143,20 +152,25 @@ function isFilterOnlyQuery(q: string): boolean {
  * Deterministic corrections applied AFTER classification (Gemini or
  * heuristic) — live testing showed the classifier drifts on exactly these:
  * skip questions belong to the study guide (its prompt is the only one with
- * the full-distribution tail), and a filter-only query like "last year's
- * ESE" is a frequency ask, never a semantic search.
+ * the full-distribution tail), a filter-only query like "last year's ESE"
+ * is a frequency ask, and count-phrased topic questions ("how many times
+ * has hashing been asked") must reach the exam-total lead.
  */
-export function coerceIntent(
-  intent: Intent,
-  question: string,
-  year: string | null,
-  examType: string | null,
-): Intent {
-  if (intent === "TOPIC_WEIGHTAGE" && SKIP_RE.test(question)) return "STUDY_GUIDE";
-  if (intent === "SEMANTIC" && (year || examType) && isFilterOnlyQuery(question)) {
-    return "ANALYTICS";
+export function coerceClassification(cls: Classification, question: string): Classification {
+  let { intent, topic } = cls;
+  if (intent === "TOPIC_WEIGHTAGE" && SKIP_RE.test(question)) intent = "STUDY_GUIDE";
+  if (intent === "SEMANTIC" && (cls.year || cls.examType) && isFilterOnlyQuery(question)) {
+    intent = "ANALYTICS";
   }
-  return intent;
+  if (intent !== "TOPIC_ANALYTICS" && intent !== "STUDY_GUIDE" && COUNT_RE.test(question)) {
+    const m = TOPIC_PATTERN_PASSIVE.exec(question) ?? TOPIC_PATTERN.exec(question);
+    const extracted = topic ?? m?.[1]?.trim() ?? null;
+    if (extracted) {
+      intent = "TOPIC_ANALYTICS";
+      topic = extracted;
+    }
+  }
+  return { ...cls, intent, topic };
 }
 
 /**
