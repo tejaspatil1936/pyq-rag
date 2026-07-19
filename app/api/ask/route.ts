@@ -15,6 +15,8 @@ import {
   formatTopicAnalyticsAnswer,
   formatTopicWeightageAnswer,
   guardOutput,
+  normalizeCitations,
+  stripContradictoryPreamble,
   synthesizeAnswer,
   synthesizeStudyGuide,
 } from "@/lib/answer";
@@ -250,9 +252,9 @@ export async function POST(req: Request) {
       }
 
       // STUDY_GUIDE: Gemini writes the plan from the deterministic data.
-      // The rarely-asked tail comes from the FULL distribution — skip
-      // recommendations must never come from the bottom of a top-N slice.
-      const tail = await topicTail(subject, 10);
+      // The rarely-asked tail comes from the FULL distribution and is only
+      // provided when the student actually asks about skipping.
+      const tail = isSkipQuery(question) ? await topicTail(subject, 10) : null;
       if (!consume(`synth:${client}`, synthLimit())) {
         logAsk({ status: 429, limited: "synth" });
         return NextResponse.json(
@@ -292,7 +294,9 @@ export async function POST(req: Request) {
         answer: guardedPlan.answer,
         topics: topicsPayload,
         total_exams: total,
-        skip_candidates: tail.map((t) => ({ topic: t.topic, exam_count: t.exam_count })),
+        ...(tail !== null
+          ? { skip_candidates: tail.map((t) => ({ topic: t.topic, exam_count: t.exam_count })) }
+          : {}),
       });
     }
 
@@ -422,8 +426,12 @@ export async function POST(req: Request) {
     if (guarded.flagged) {
       return respond({ intent: "REFUSED", answer: guarded.answer });
     }
-    // Worked solutions get an explicit human-verification caution.
-    const answer = solving ? guarded.answer + SOLUTION_CAUTION : guarded.answer;
+    // Contract enforcement: resolve-first (no contradictory non-coverage
+    // preamble), then citation-shape normalization — before any client
+    // ever sees the text. Worked solutions get the verification caution.
+    let answer = stripContradictoryPreamble(guarded.answer);
+    answer = normalizeCitations(answer, citations.length);
+    if (solving) answer += SOLUTION_CAUTION;
     return respond({ intent, answer, citations });
   } catch (err) {
     if (err instanceof GeminiUnavailable) {

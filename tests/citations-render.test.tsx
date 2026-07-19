@@ -2,6 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import AnswerView from "../components/AnswerView";
+import { normalizeCitations } from "../lib/answer";
 import type { AskResponse } from "../lib/api-types";
 
 const citation = (ref: number) => ({
@@ -62,6 +63,46 @@ describe("citation marker rendering", () => {
     for (const n of [1, 3, 5, 6]) expect(html).toContain(`>${n}</button>`);
     expect(html).not.toMatch(/required by\s*1,\s*3/);
     expect(html).not.toContain("and 6]");
+  });
+
+  it("server-side contract repair: literal transcript string 'as seen in 9'", () => {
+    expect(normalizeCitations("This appears frequently, as seen in 9.", 10)).toBe(
+      "This appears frequently, as seen in [9].",
+    );
+  });
+
+  it("server-side contract repair: literal transcript string '1, 2, 4, 7, and 10'", () => {
+    expect(normalizeCitations("This is required by 1, 2, 4, 7, and 10.", 10)).toBe(
+      "This is required by [1][2][4][7][10].",
+    );
+  });
+
+  it("server-side contract repair: bracket and paren groups", () => {
+    expect(normalizeCitations("Compare [1, 5] and [2, 3, and 6].", 10)).toBe(
+      "Compare [1][5] and [2][3][6].",
+    );
+    expect(normalizeCitations("Both variants appear (2, 7).", 10)).toBe(
+      "Both variants appear ([2][7]).",
+    );
+  });
+
+  it("server-side contract repair never touches data numbers", () => {
+    expect(normalizeCitations("asked in 9 exams, worth 8 marks", 10)).toBe(
+      "asked in 9 exams, worth 8 marks",
+    );
+    expect(normalizeCitations("as seen in 25.", 10)).toBe("as seen in 25."); // out of ref range
+    expect(normalizeCitations("released in 2024.", 10)).toBe("released in 2024.");
+  });
+
+  it("repaired transcript strings render as chips end-to-end", () => {
+    const normalized = normalizeCitations(
+      "This is required by 1, 2, 4, 7, and 10. It repeats often, as seen in 9.",
+      10,
+    );
+    const html = renderSemantic(normalized, [1, 2, 4, 7, 9, 10]);
+    for (const n of [1, 2, 4, 7, 9, 10]) expect(html).toContain(`>${n}</button>`);
+    expect(html).not.toMatch(/required by\s*1,/);
+    expect(html).not.toMatch(/seen in\s*9/);
   });
 
   it("real markdown links are left untouched", () => {
