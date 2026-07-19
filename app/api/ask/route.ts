@@ -1,7 +1,15 @@
 import { NextResponse } from "next/server";
 
-import { clusterSources, topClusters, topicClusters } from "@/lib/analytics";
 import {
+  availableYears,
+  clusterSources,
+  examCountForClusters,
+  filterLabel,
+  topClusters,
+  topicClusters,
+} from "@/lib/analytics";
+import {
+  PREDICTION_DISCLAIMER,
   SOLUTION_CAUTION,
   formatAnalyticsAnswer,
   formatTopicAnalyticsAnswer,
@@ -18,10 +26,10 @@ import { classifyIntent, type HistoryTurn } from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
 import { logEvent } from "@/lib/obs";
 import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
-import { prefilterAbuse, refusalMessage } from "@/lib/scope";
+import { greetingMessage, isGreeting, prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
-import { topicQuestions, topicWeightage, totalExams } from "@/lib/topics";
+import { topicQuestions, topicTail, topicWeightage, totalExams } from "@/lib/topics";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -134,6 +142,11 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `unknown subject: ${subject}` }, { status: 404 });
     }
 
+    // A bare "hi"/"?" is someone knocking, not abuse — nudge, don't refuse.
+    if (isGreeting(question)) {
+      return respond({ intent: "GREETING", answer: greetingMessage(subject) });
+    }
+
     // Scope gate layer 0: obvious abuse dies here for free, before Gemini.
     if (prefilterAbuse(question)) {
       return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
@@ -141,17 +154,53 @@ export async function POST(req: Request) {
 
     // Scope gate layer 1 rides along in the intent-classification call; the
     // history lets it resolve follow-ups like "explain the second one".
-    const { inScope, intent, topic, rewritten, topN, solving } = await classifyIntent(question, {
-      subject,
-      history,
-    });
+    const { inScope, intent, topic, rewritten, topN, solving, predictive, year, examType } =
+      await classifyIntent(question, { subject, history });
     if (!inScope) {
       return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
     }
+    const filters = { year, examType };
+    const note = filterLabel(filters);
+
+    // "Predict the paper" phrasings: lead with the disclaimer, then honest
+    // frequency data — never Gemini-written fortune telling.
+    if (predictive) {
+      const [topics, total] = await Promise.all([topicWeightage(subject, 10), totalExams(subject)]);
+      if (topics.length > 0) {
+        const questions = await topicQuestions(subject, topics.map((t) => t.topic));
+        return respond({
+          intent: "TOPIC_WEIGHTAGE",
+          predictive: true,
+          answer: PREDICTION_DISCLAIMER + formatTopicWeightageAnswer(subject, topics, total),
+          topics: topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
+          total_exams: total,
+        });
+      }
+      const clusters = await topClusters(subject, TOP_K);
+      const sources = await clusterSources(clusters.map((c) => c.cluster_id));
+      return respond({
+        intent: "ANALYTICS",
+        predictive: true,
+        answer:
+          PREDICTION_DISCLAIMER +
+          (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
+        clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+      });
+    }
 
     if (intent === "ANALYTICS") {
-      const clusters = await topClusters(subject, TOP_K);
+      const clusters = await topClusters(subject, TOP_K, filters);
       if (clusters.length === 0) {
+        if (note) {
+          // The filter excluded everything — say so, and say what exists.
+          const years = await availableYears(subject);
+          return respond({
+            intent,
+            answer: `The archive has no **${subject}** ${note} papers, so there's nothing to count.${years.length > 0 ? ` Years available for this subject: ${years.join(", ")}.` : ""}`,
+            clusters: [],
+            filters: { year, exam_type: examType },
+          });
+        }
         return respond({
           intent,
           answer: `No clustered questions for **${subject}** yet — the pipeline may still be processing this subject.`,
@@ -161,8 +210,9 @@ export async function POST(req: Request) {
       const sources = await clusterSources(clusters.map((c) => c.cluster_id));
       return respond({
         intent,
-        answer: formatAnalyticsAnswer(subject, clusters, sources),
+        answer: formatAnalyticsAnswer(subject, clusters, sources, note),
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
     }
 
@@ -197,6 +247,9 @@ export async function POST(req: Request) {
       }
 
       // STUDY_GUIDE: Gemini writes the plan from the deterministic data.
+      // The rarely-asked tail comes from the FULL distribution — skip
+      // recommendations must never come from the bottom of a top-N slice.
+      const tail = await topicTail(subject, 10);
       if (!consume(`synth:${client}`, synthLimit())) {
         logAsk({ status: 429, limited: "synth" });
         return NextResponse.json(
@@ -209,7 +262,7 @@ export async function POST(req: Request) {
       }
       let plan: string;
       try {
-        plan = await synthesizeStudyGuide(subject, question, topics, total, topN, history);
+        plan = await synthesizeStudyGuide(subject, question, topics, total, topN, history, tail);
       } catch (err) {
         if (err instanceof GeminiUnavailable) {
           return respond(
@@ -236,16 +289,27 @@ export async function POST(req: Request) {
         answer: guardedPlan.answer,
         topics: topicsPayload,
         total_exams: total,
+        skip_candidates: tail.map((t) => ({ topic: t.topic, exam_count: t.exam_count })),
       });
     }
 
     if (intent === "TOPIC_ANALYTICS") {
       // Topic-scoped frequency: embed the topic phrase, match this subject's
-      // clusters by centroid similarity, rank by real question_count.
+      // clusters by centroid similarity, rank by real exam counts.
       const topicPhrase = topic ?? question;
       const topicVec = await embedQuery(topicPhrase);
-      const clusters = await topicClusters(subject, topicVec, TOP_K);
+      const clusters = await topicClusters(subject, topicVec, TOP_K, filters);
       if (clusters.length === 0) {
+        if (note) {
+          const years = await availableYears(subject);
+          return respond({
+            intent,
+            topic: topicPhrase,
+            answer: `Nothing about **${topicPhrase}** in the **${subject}** ${note} papers — the archive may simply not have those papers.${years.length > 0 ? ` Years available: ${years.join(", ")}.` : ""}`,
+            clusters: [],
+            filters: { year, exam_type: examType },
+          });
+        }
         return respond({
           intent,
           topic: topicPhrase,
@@ -253,12 +317,24 @@ export async function POST(req: Request) {
           clusters: [],
         });
       }
-      const sources = await clusterSources(clusters.map((c) => c.cluster_id));
+      const ids = clusters.map((c) => c.cluster_id);
+      const [sources, topicExamCount, total] = await Promise.all([
+        clusterSources(ids),
+        examCountForClusters(ids, filters),
+        totalExams(subject, filters), // denominator matches the active filter
+      ]);
       return respond({
         intent,
         topic: topicPhrase,
-        answer: formatTopicAnalyticsAnswer(subject, topicPhrase, clusters, sources),
+        answer: formatTopicAnalyticsAnswer(subject, topicPhrase, clusters, sources, {
+          topicExamCount,
+          totalExams: total,
+          filterNote: note,
+        }),
+        topic_exam_count: topicExamCount,
+        total_exams: total,
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
     }
 
