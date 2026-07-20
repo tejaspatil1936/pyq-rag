@@ -117,6 +117,20 @@ describe("normalizeQuery + sloppy real-world phrasing", () => {
     expect(["ANALYTICS", "TOPIC_ANALYTICS"]).toContain(intent);
   });
 
+  it("repairs typos in high-value tokens", () => {
+    expect(normalizeQuery("important questiions to study")).toBe("important questions to study");
+    expect(normalizeQuery("most importent topcs")).toContain("important");
+    expect(normalizeQuery("most importent topcs")).toContain("topics");
+    expect(normalizeQuery("repated qustions")).toContain("repeated");
+    // legit words survive
+    expect(normalizeQuery("explain the station model")).toContain("station");
+  });
+
+  it("typo'd core query still routes to a data-bearing intent", () => {
+    const { intent } = classifyHeuristic(normalizeQuery("important questiions to study"));
+    expect(["ANALYTICS", "TOPIC_WEIGHTAGE", "STUDY_GUIDE"]).toContain(intent);
+  });
+
   it("Hinglish topic phrasing still hits the topic path", () => {
     const c = classifyHeuristic(normalizeQuery("kitne questions on hashing aate hain"));
     expect(c.intent).toBe("TOPIC_ANALYTICS");
