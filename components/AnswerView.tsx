@@ -12,7 +12,12 @@ import {
   type TrendTopicResult,
   yearSpan,
 } from "@/lib/api-types";
-import { PRIORITY_MUST_RATIO, PRIORITY_SHOULD_RATIO } from "@/lib/config";
+import {
+  PRIORITY_MUST_RATIO,
+  PRIORITY_SHOULD_RATIO,
+  QUESTION_MUST_RATIO,
+  QUESTION_SHOULD_RATIO,
+} from "@/lib/config";
 
 /** Some papers carry the literal string "Unknown" for year/exam_type — hide it. */
 function known(value: string | null): string | null {
@@ -21,18 +26,29 @@ function known(value: string | null): string | null {
 
 /* ---------- shared glanceable primitives ---------- */
 
-/** 3-tier priority from exam coverage. One accent color (indigo); tiers are
- *  encoded by weight, not extra hues. */
+const TIER_STYLES = {
+  must: { label: "Must know", classes: "bg-indigo-500 text-white" },
+  should: { label: "Should know", classes: "bg-indigo-500/15 text-indigo-300" },
+  ifTime: { label: "If time permits", classes: "bg-slate-800 text-slate-400" },
+};
+
+/** Topic-level tiers: fraction of the subject's total exams. */
 function priorityTier(examCount: number, total: number | null) {
   if (!total || total <= 0) return null;
   const ratio = examCount / total;
-  if (ratio >= PRIORITY_MUST_RATIO) {
-    return { label: "Must know", classes: "bg-indigo-500 text-white" };
-  }
-  if (ratio >= PRIORITY_SHOULD_RATIO) {
-    return { label: "Should know", classes: "bg-indigo-500/15 text-indigo-300" };
-  }
-  return { label: "If time permits", classes: "bg-slate-800 text-slate-400" };
+  if (ratio >= PRIORITY_MUST_RATIO) return TIER_STYLES.must;
+  if (ratio >= PRIORITY_SHOULD_RATIO) return TIER_STYLES.should;
+  return TIER_STYLES.ifTime;
+}
+
+/** Question-level tiers: relative to the list's top count, so the #1
+ *  most-repeated question is always "Must know". */
+function questionTier(examCount: number, maxInList: number | null) {
+  if (!maxInList || maxInList <= 0) return null;
+  const ratio = examCount / maxInList;
+  if (ratio >= QUESTION_MUST_RATIO) return TIER_STYLES.must;
+  if (ratio >= QUESTION_SHOULD_RATIO) return TIER_STYLES.should;
+  return TIER_STYLES.ifTime;
 }
 
 function CoverageBar({ count, total }: { count: number; total: number | null }) {
@@ -101,24 +117,22 @@ function ExpandableText({ text, className = "" }: { text: string; className?: st
   );
 }
 
-/** "49 exams · 24 topics · top 3 cover 41% of appearances" */
+/** "49 exams · 150 topics · top topic in 61% of exams" — the concentration
+ *  stat uses exam coverage, never a denominator that dilutes it. */
 function StatStrip({
   totalExams,
   topicCount,
-  totalAppearances,
   topics,
 }: {
   totalExams: number | null;
   topicCount?: number;
-  totalAppearances?: number;
   topics: TopicResult[];
 }) {
   if (totalExams == null) return null;
   const parts: string[] = [`${totalExams} exams`];
   if (topicCount) parts.push(`${topicCount} topics`);
-  if (totalAppearances && topics.length >= 3) {
-    const top3 = topics.slice(0, 3).reduce((s, t) => s + t.exam_count, 0);
-    parts.push(`top 3 cover ${Math.round((top3 / totalAppearances) * 100)}% of appearances`);
+  if (totalExams > 0 && topics.length > 0) {
+    parts.push(`top topic in ${Math.round((topics[0].exam_count / totalExams) * 100)}% of exams`);
   }
   return (
     <div
@@ -210,6 +224,7 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
               cluster={c}
               rank={i + 1}
               totalExams={res.total_exams ?? null}
+              maxExamCount={Math.max(...res.clusters!.map((x) => x.exam_count))}
               filterNote={filterNote}
             />
           ))}
@@ -223,16 +238,18 @@ function ClusterItem({
   cluster: c,
   rank,
   totalExams,
+  maxExamCount = null,
   filterNote = null,
 }: {
   cluster: ClusterResult;
   rank: number;
   totalExams: number | null;
+  maxExamCount?: number | null;
   filterNote?: string | null;
 }) {
   const span = yearSpan(c.years_spanned);
   const yearsChip = filterNote ? (span ? `asked since ${span.split("–")[0]}` : null) : span;
-  const tier = priorityTier(c.exam_count, totalExams);
+  const tier = questionTier(c.exam_count, maxExamCount);
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm">
       <div className="flex gap-3">
@@ -330,12 +347,7 @@ function TopicAnswer({ res }: { res: AskResponse }) {
       <span className="mb-2 inline-block rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
         {intent === "STUDY_GUIDE" ? "Study plan" : "Topic weightage"}
       </span>
-      <StatStrip
-        totalExams={totalExams}
-        topicCount={res.topic_count}
-        totalAppearances={res.total_appearances}
-        topics={topics}
-      />
+      <StatStrip totalExams={totalExams} topicCount={res.topic_count} topics={topics} />
       {dayPlan ? (
         <div data-testid="day-plan">
           {dayPlan.intro && <Prose>{dayPlan.intro}</Prose>}
