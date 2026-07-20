@@ -9,6 +9,7 @@ import {
   type Citation,
   type ClusterResult,
   type TopicResult,
+  type TrendTopicResult,
   yearSpan,
 } from "@/lib/api-types";
 
@@ -40,6 +41,9 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
   }
   if (res.intent === "SEMANTIC") {
     return <SemanticAnswer answer={res.answer} citations={res.citations ?? []} msgId={msgId} />;
+  }
+  if (res.intent === "YEAR_TREND") {
+    return <YearTrendAnswer answer={res.answer} trend={res.trend ?? null} />;
   }
   if (res.intent === "TOPIC_WEIGHTAGE" || res.intent === "STUDY_GUIDE") {
     return (
@@ -161,6 +165,76 @@ function TopicAnswer({
             </ol>
           </details>
         ))}
+    </div>
+  );
+}
+
+const STATUS_STYLES: Record<string, string> = {
+  rising: "bg-emerald-500/15 text-emerald-300",
+  staple: "bg-indigo-500/15 text-indigo-300",
+  fading: "bg-slate-800 text-slate-400",
+};
+
+/** YEAR_TREND: prose summary + per-topic per-year count table. */
+function YearTrendAnswer({
+  answer,
+  trend,
+}: {
+  answer: string;
+  trend: { years: string[]; topics: TrendTopicResult[] } | null;
+}) {
+  return (
+    <div data-testid="year-trend-answer">
+      <span className="mb-2 inline-block rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
+        Year-wise trend
+      </span>
+      <div className="prose prose-sm prose-invert max-w-none prose-p:my-2">
+        <ReactMarkdown remarkPlugins={[remarkGfm]}>{answer}</ReactMarkdown>
+      </div>
+      {trend && trend.topics.length > 0 && (
+        <div className="mt-3 overflow-x-auto rounded-xl border border-slate-800">
+          <table className="w-full min-w-max border-collapse text-xs">
+            <thead>
+              <tr className="bg-slate-900 text-slate-400">
+                <th className="px-3 py-2 text-left font-medium">Topic</th>
+                {trend.years.map((y) => (
+                  <th key={y} className="px-2 py-2 text-center font-medium tabular-nums">
+                    ’{y.slice(2)}
+                  </th>
+                ))}
+                <th className="px-2 py-2 text-center font-medium">Total</th>
+              </tr>
+            </thead>
+            <tbody className="divide-y divide-slate-800">
+              {trend.topics.map((t) => (
+                <tr key={t.topic} className="bg-slate-900/60">
+                  <td className="max-w-52 px-3 py-1.5">
+                    <span className="line-clamp-2">{t.topic}</span>
+                    {t.status && (
+                      <span
+                        className={`mt-0.5 inline-block rounded-full px-1.5 text-[10px] font-semibold ${STATUS_STYLES[t.status]}`}
+                      >
+                        {t.status}
+                      </span>
+                    )}
+                  </td>
+                  {t.counts.map((n, i) => (
+                    <td
+                      key={trend.years[i]}
+                      className={`px-2 py-1.5 text-center tabular-nums ${n === 0 ? "text-slate-600" : "text-slate-200"}`}
+                    >
+                      {n === 0 ? "·" : n}
+                    </td>
+                  ))}
+                  <td className="px-2 py-1.5 text-center font-semibold tabular-nums text-emerald-300">
+                    {t.exam_count}
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }
