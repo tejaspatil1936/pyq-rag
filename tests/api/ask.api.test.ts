@@ -55,6 +55,20 @@ async function ask(body: unknown): Promise<{ status: number; body: AskResponse }
   return { status: res.status, body: (await res.json()) as AskResponse };
 }
 
+/**
+ * For Gemini-synthesis tests: a degraded response means the runtime key hit
+ * its per-minute limit mid-suite (the quality retry doubles call volume).
+ * Real clients just ask again — wait out the RPM window and retry once.
+ */
+async function askSynth(body: unknown): Promise<{ status: number; body: AskResponse }> {
+  let res = await ask(body);
+  if (res.status === 200 && res.body.degraded) {
+    await new Promise((r) => setTimeout(r, 30_000));
+    res = await ask(body);
+  }
+  return res;
+}
+
 let subjects: { subject: string; question_count: number }[] = [];
 
 function findSubject(re: RegExp): string {
@@ -136,7 +150,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
 
   it("SEMANTIC: answers with [n] markers and valid citations", async () => {
     const subject = findSubject(/^computer networks$/i);
-    const { status, body } = await ask({
+    const { status, body } = await askSynth({
       subject,
       question: "Explain the difference between TCP and UDP.",
     });
@@ -314,7 +328,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
 
   it("transcript: 'what to study 1st' returns a grounded prose plan", async () => {
     const subject = findSubject(/^data structures$/i);
-    const { status, body } = await ask({ subject, question: "what to study 1st" });
+    const { status, body } = await askSynth({ subject, question: "what to study 1st" });
     expect(status).toBe(200);
     expect(body.intent).toBe("STUDY_GUIDE");
     const topics = topicLevel(body);
@@ -333,7 +347,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
 
   it("transcript: 'how to study for the exam' returns a distinct plan", async () => {
     const subject = findSubject(/^data structures$/i);
-    const { status, body } = await ask({ subject, question: "how to study for the exam" });
+    const { status, body } = await askSynth({ subject, question: "how to study for the exam" });
     expect(status).toBe(200);
     expect(body.intent).toBe("STUDY_GUIDE");
     topicLevel(body);
@@ -388,7 +402,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
 
   it("skip queries only sacrifice the rarely-asked tail", async () => {
     const subject = findSubject(/^data structures$/i);
-    const { status, body } = await ask({
+    const { status, body } = await askSynth({
       subject,
       question: "which topics can I skip if I'm short on time?",
     });
