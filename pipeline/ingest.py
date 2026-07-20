@@ -66,6 +66,12 @@ def save_questions(conn, paper_id, questions):
             )
 
 
+def save_extract_method(conn, paper_id, method):
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("UPDATE papers SET extract_method = %s WHERE id = %s", (method, paper_id))
+
+
 def mark_failed(conn, paper_id, error):
     conn.rollback()
     with conn:
@@ -95,6 +101,7 @@ def process_paper(conn, km, paper, workdir):
         raise RuntimeError("Gemini returned zero questions")
 
     save_questions(conn, paper_id, questions)
+    save_extract_method(conn, paper_id, method)
     log.info(
         "paper %d done: %s (%d KB, %s, %d questions)",
         paper_id, file_name, size // 1024, method, len(questions),

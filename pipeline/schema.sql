@@ -26,7 +26,30 @@ CREATE TABLE IF NOT EXISTS questions (
     sub_label     TEXT,
     embedding     vector(384),
     cluster_id    INTEGER,
+    has_figure    BOOLEAN,  -- refers to a provided figure/diagram (audit backfills)
     created_at    TIMESTAMPTZ NOT NULL DEFAULT now()
+);
+
+-- Existing databases predate these columns.
+ALTER TABLE questions ADD COLUMN IF NOT EXISTS has_figure BOOLEAN;
+ALTER TABLE papers ADD COLUMN IF NOT EXISTS extract_method TEXT;  -- 'text' | 'ocr' (tracked going forward)
+
+-- Per-subject corpus health, recomputed by pipeline/audit_subjects.py.
+CREATE TABLE IF NOT EXISTS subject_stats (
+    standard_subject     TEXT PRIMARY KEY,
+    papers               INTEGER,
+    exams                INTEGER,
+    questions            INTEGER,
+    clusters             INTEGER,
+    pct_labeled          REAL,
+    distinct_years       INTEGER,
+    years                JSONB,      -- {year: paper_count}
+    pct_ocr              REAL,       -- NULL where extract_method was never tracked
+    pct_figure           REAL,
+    max_cluster_size     INTEGER,
+    max_cluster_texts    INTEGER,    -- distinct member texts of that largest cluster
+    text_twin_risk       REAL,       -- share of clusters: near-identical text, >=3 exams, figure-dependent
+    computed_at          TIMESTAMPTZ NOT NULL DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS clusters (
