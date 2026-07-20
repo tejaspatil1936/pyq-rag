@@ -1,4 +1,5 @@
 import { EXAM_KEY_SQL } from "./analytics";
+import { TREND_MIN_YEARS } from "./config";
 import { getPool } from "./db";
 
 export type TrendStatus = "rising" | "staple" | "fading" | null;
@@ -15,6 +16,8 @@ export interface TrendTopic {
 }
 
 export interface YearTrend {
+  /** True when too few distinct years exist to call rising/fading. */
+  insufficient_years: boolean;
   years: string[];
   topics: TrendTopic[];
   rising: string[];
@@ -47,6 +50,7 @@ export async function yearTrend(subject: string): Promise<YearTrend | null> {
 
   const years = [...new Set(rows.map((r) => r.year))].sort();
   const latest = Number(years[years.length - 1]);
+  const insufficientYears = years.length < TREND_MIN_YEARS;
   const byTopic = new Map<string, Map<string, number>>();
   for (const r of rows) {
     const m = byTopic.get(r.topic) ?? new Map<string, number>();
@@ -61,9 +65,13 @@ export async function yearTrend(subject: string): Promise<YearTrend | null> {
     const last = Number(present[present.length - 1]);
     const total = counts.reduce((s, n) => s + n, 0);
     let status: TrendStatus = null;
-    if (last <= latest - 2 && total >= 2) status = "fading";
-    else if (first >= latest - 2 && total >= 2) status = "rising";
-    else if (first <= latest - 3 && last >= latest - 1) status = "staple";
+    // With <TREND_MIN_YEARS distinct years, rising/fading labels would be
+    // noise — every status stays null and the summary says why.
+    if (!insufficientYears) {
+      if (last <= latest - 2 && total >= 2) status = "fading";
+      else if (first >= latest - 2 && total >= 2) status = "rising";
+      else if (first <= latest - 3 && last >= latest - 1) status = "staple";
+    }
     return {
       topic,
       exam_count: total,
@@ -91,5 +99,5 @@ export async function yearTrend(subject: string): Promise<YearTrend | null> {
     ...all.slice(MAX_TREND_TOPICS).filter((t) => named.has(t.topic)),
   ];
 
-  return { years, topics, rising, staples, faded };
+  return { insufficient_years: insufficientYears, years, topics, rising, staples, faded };
 }

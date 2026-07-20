@@ -74,8 +74,11 @@ function formatClusterList(
         ? ` · asked since ${firstYear}`
         : ""
       : formatYears(c.years_spanned);
+    const twin = (c as { text_twin?: boolean }).text_twin
+      ? " — note: refers to a figure; versions may differ"
+      : "";
     lines.push(
-      `${i + 1}. "${text}" — asked in **${c.exam_count}** exam${c.exam_count === 1 ? "" : "s"}${filterNote ? ` in ${filterNote}` : ""}${yearsPart}`,
+      `${i + 1}. "${text}" — asked in **${c.exam_count}** exam${c.exam_count === 1 ? "" : "s"}${filterNote ? ` in ${filterNote}` : ""}${yearsPart}${twin}`,
     );
     const src = sources.get(c.cluster_id) ?? [];
     if (src.length > 0) {
@@ -130,9 +133,12 @@ export function formatTopicWeightageAnswer(
 /** YEAR_TREND: deterministic summary naming staples, risers and faders. */
 export function formatYearTrendAnswer(subject: string, trend: YearTrend): string {
   const { years, rising, staples, faded } = trend;
-  const span = `${years[0]}–${years[years.length - 1]}`;
+  const span = years.length === 1 ? `${years[0]} only` : `${years[0]}–${years[years.length - 1]} only`;
   const byName = new Map(trend.topics.map((t) => [t.topic, t]));
-  const parts: string[] = [`**How ${subject} topics moved across ${span}:**`];
+  if (trend.insufficient_years) {
+    return `**Archive coverage: ${span}.** Only ${years.length} distinct year${years.length === 1 ? "" : "s"} on file — too few to call any topic rising or fading. Per-year counts below are raw data, not trends.`;
+  }
+  const parts: string[] = [`**How ${subject} topics moved across ${years[0]}–${years[years.length - 1]}:**`, `Archive coverage: ${span}.`];
   if (staples.length > 0) {
     parts.push(
       `Steady staples: ${staples
