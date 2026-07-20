@@ -49,3 +49,14 @@ export const PRIORITY_SHOULD_RATIO = 0.15;
  */
 export const QUESTION_MUST_RATIO = 0.66;
 export const QUESTION_SHOULD_RATIO = 0.33;
+
+/** Below these, tiers/percentages are suppressed and answers carry a
+ *  small-archive caveat — 2-of-3-exams is indicative, not a trend. */
+export const SMALL_CORPUS_EXAMS = 8;
+export const SMALL_CORPUS_QUESTIONS = 100;
+
+/** YEAR_TREND refuses rising/fading labels below this many distinct years. */
+export const TREND_MIN_YEARS = 3;
+
+/** Audit pct_figure at/above this adds the figure-methodology note. */
+export const FIGURE_HEAVY_SHARE = 0.25;

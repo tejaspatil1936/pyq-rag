@@ -13,6 +13,19 @@ export interface ClusterRow {
    *  frequency number shown to students. */
   exam_count: number;
   years_spanned: string | null;
+  /** Fraction of member questions that reference a figure (0..1). */
+  figure_share?: number;
+  /** Distinct normalized member texts — low + many exams = text twins. */
+  distinct_texts?: number;
+}
+
+/** Derived display flags: figure-dependence and text-twin annotation. */
+export function annotateCluster<T extends ClusterRow>(
+  c: T,
+): T & { has_figure: boolean; text_twin: boolean } {
+  const has_figure = (c.figure_share ?? 0) >= 0.5;
+  const text_twin = has_figure && (c.distinct_texts ?? 99) <= 2 && c.exam_count >= 3;
+  return { ...c, has_figure, text_twin };
 }
 
 /**
@@ -99,6 +112,8 @@ export async function topClusters(
             c.representative_text,
             c.question_count::int AS question_count,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
+            AVG(CASE WHEN COALESCE(q.has_figure, false) THEN 1.0 ELSE 0 END) AS figure_share,
+            COUNT(DISTINCT lower(regexp_replace(q.question_text, '\\s+', ' ', 'g')))::int AS distinct_texts,
             c.years_spanned,
             c.topic
        FROM clusters c
@@ -136,6 +151,8 @@ export async function topicClusters(
             c.representative_text,
             c.question_count::int AS question_count,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
+            AVG(CASE WHEN COALESCE(q.has_figure, false) THEN 1.0 ELSE 0 END) AS figure_share,
+            COUNT(DISTINCT lower(regexp_replace(q.question_text, '\\s+', ' ', 'g')))::int AS distinct_texts,
             c.years_spanned,
             c.topic,
             1 - (AVG(q.embedding) <=> $1::vector) AS topic_similarity

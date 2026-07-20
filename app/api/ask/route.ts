@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import {
+  annotateCluster,
   availableYears,
   clusterSources,
   examCountForClusters,
@@ -26,6 +27,7 @@ import {
 } from "@/lib/answer";
 import { cacheGet, cacheKey, cacheSet } from "@/lib/cache";
 import {
+  FIGURE_HEAVY_SHARE,
   MIN_GROUNDING_HITS,
   PROSE_WORDS_EXPLAIN,
   PROSE_WORDS_STRATEGY,
@@ -37,6 +39,7 @@ import { classifyIntent, coerceClassification, isSkipQuery, type HistoryTurn } f
 import { normalizeQuery } from "@/lib/normalize";
 import { logEvent } from "@/lib/obs";
 import { skipContractViolation } from "@/lib/quality";
+import { getSubjectStats, isSmallCorpus } from "@/lib/subject-stats";
 import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
 import { greetingMessage, isGreeting, prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
@@ -164,6 +167,9 @@ export async function POST(req: Request) {
       return NextResponse.json({ error: `unknown subject: ${subject}` }, { status: 404 });
     }
 
+    // Corpus-health stats drive adaptive honesty (null until audited).
+    const subjectStats = await getSubjectStats(subject);
+
     // A bare "hi"/"?" is someone knocking, not abuse — nudge, don't refuse.
     if (isGreeting(question)) {
       return respond({ intent: "GREETING", answer: greetingMessage(subject) });
@@ -236,11 +242,21 @@ export async function POST(req: Request) {
         clusterSources(clusters.map((c) => c.cluster_id)),
         totalExams(subject, filters), // denominator for the coverage bars
       ]);
+      const annotated = clusters.map(annotateCluster);
+      const small = isSmallCorpus(subjectStats, analyticsTotal);
+      let answer = formatAnalyticsAnswer(subject, annotated, sources, note);
+      if (small) {
+        answer += `\n\n*Small archive: only ${analyticsTotal} exam${analyticsTotal === 1 ? "" : "s"} on file — treat these counts as indicative.*`;
+      }
+      if ((subjectStats?.pct_figure ?? 0) >= FIGURE_HEAVY_SHARE) {
+        answer += `\n\n*Note: many ${subject} questions reference figures or diagrams. Counts group question text — the figures may differ between papers.*`;
+      }
       return respond({
         intent,
-        answer: formatAnalyticsAnswer(subject, clusters, sources, note),
-        clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        answer,
+        clusters: annotated.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
         total_exams: analyticsTotal,
+        ...(small ? { small_corpus: true } : {}),
         ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
     }
@@ -292,14 +308,17 @@ export async function POST(req: Request) {
       const questions = await topicQuestions(subject, topics.map((t) => t.topic));
       const topicsPayload = topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] }));
 
+      const smallW = isSmallCorpus(subjectStats, total);
+      const smallNote = `\n\n*Small archive: only ${total} exam${total === 1 ? "" : "s"} on file — treat rankings as indicative.*`;
       if (intent === "TOPIC_WEIGHTAGE") {
         return respond({
           intent,
-          answer: formatTopicWeightageAnswer(subject, topics, total),
+          answer: formatTopicWeightageAnswer(subject, topics, total) + (smallW ? smallNote : ""),
           topics: topicsPayload,
           total_exams: total,
           topic_count: stats.topic_count,
           total_appearances: stats.total_appearances,
+          ...(smallW ? { small_corpus: true } : {}),
         });
       }
 
@@ -376,6 +395,9 @@ export async function POST(req: Request) {
           }
         }
       }
+      if (smallW) {
+        planAnswer = `*Small archive: only ${total} exam${total === 1 ? "" : "s"} on file — indicative, not definitive.*\n\n${planAnswer}`;
+      }
       return respond({
         intent,
         answer: planAnswer,
@@ -383,6 +405,7 @@ export async function POST(req: Request) {
         total_exams: total,
         topic_count: stats.topic_count,
         total_appearances: stats.total_appearances,
+        ...(smallW ? { small_corpus: true } : {}),
         ...(tail !== null
           ? { skip_candidates: tail.map((t) => ({ topic: t.topic, exam_count: t.exam_count })) }
           : {}),
@@ -434,17 +457,24 @@ export async function POST(req: Request) {
         label ? labelExamCount(subject, label, filters) : examCountForClusters(ids, filters),
         totalExams(subject, filters), // denominator matches the active filter
       ]);
+      const annotated = clusters.map(annotateCluster);
+      const small = isSmallCorpus(subjectStats, total);
+      let answer = formatTopicAnalyticsAnswer(subject, topicPhrase, annotated, sources, {
+        topicExamCount,
+        totalExams: total,
+        filterNote: note,
+      });
+      if (small) {
+        answer += `\n\n*Small archive: only ${total} exam${total === 1 ? "" : "s"} on file — treat these counts as indicative.*`;
+      }
       return respond({
         intent,
         topic: topicPhrase,
-        answer: formatTopicAnalyticsAnswer(subject, topicPhrase, clusters, sources, {
-          topicExamCount,
-          totalExams: total,
-          filterNote: note,
-        }),
+        answer,
         topic_exam_count: topicExamCount,
         total_exams: total,
-        clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        clusters: annotated.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        ...(small ? { small_corpus: true } : {}),
         ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
     }

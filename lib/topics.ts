@@ -166,6 +166,8 @@ export async function labelClusters(
     exam_count: number;
     years_spanned: string | null;
     topic?: string | null;
+    figure_share?: number;
+    distinct_texts?: number;
   }[]
 > {
   const res = await getPool().query(
@@ -173,6 +175,8 @@ export async function labelClusters(
             c.representative_text,
             c.question_count::int AS question_count,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
+            AVG(CASE WHEN COALESCE(q.has_figure, false) THEN 1.0 ELSE 0 END) AS figure_share,
+            COUNT(DISTINCT lower(regexp_replace(q.question_text, '\\s+', ' ', 'g')))::int AS distinct_texts,
             c.years_spanned,
             c.topic
        FROM clusters c
