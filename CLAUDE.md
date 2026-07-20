@@ -91,6 +91,35 @@ question papers. Two query types:
   weightage", "Year-wise trend".
 - Simple, fast, mobile-first. No login.
 
+## Response invariants (enforced, all subjects)
+- Scope fidelity: deliver what was asked at the asked scope; any
+  capped/preview/filtered response states its actual scope in the answer.
+  Silent truncation or substitution is forbidden.
+- Denominator integrity: every "N of M" uses that subject's (and active
+  filter's) true M; a count may never exceed its denominator; nested counts
+  ("Questions (N)") are true DB totals, never preview lengths.
+- Filter propagation: an extracted year/exam-type filter applies to
+  whichever intent fires, with filtered denominators and a visible badge;
+  filters modify scope, never intent.
+- Skip safety: skip/deprioritize candidates only from the rarely-asked tail
+  (<=3 exams, config); the "not skippable" statement for high-frequency
+  topics is mandatory; a response naming a >3-exam topic as skippable is
+  rejected and retried.
+- Grounding: synthesis claims trace to retrieved data; below the similarity
+  floor -> honest no-answer with topic suggestions; prediction phrasings
+  lead with the cannot-predict disclaimer.
+- Honest emptiness: zero-match and empty-filter results state the fact plus
+  what does exist (available years, nearest topics) — never bluff, never a
+  generic fallback without saying so.
+- Small-corpus humility: below thresholds (<8 distinct exams or <100
+  questions, config), suppress tiers/percentages, prepend a small-archive
+  caveat, and refuse rising/fading labels with <3 distinct years.
+- No internal vocabulary in any user-visible text.
+These are enforced server-side by lib/invariants.ts on every /api/ask
+response: deterministic-path violations are bugs (logged loudly as
+invariant_violation and fixed at the source); LLM-path violations trigger
+reject/retry, then degrade honestly.
+
 ## Quality gates (do not skip)
 - After first 300 papers processed: script that samples 20 random papers and
   prints extracted questions next to the PDF URL for manual comparison.
