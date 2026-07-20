@@ -1,4 +1,5 @@
 import { EXAM_KEY_SQL, FILTER_SQL, type ExamFilters } from "./analytics";
+import { SKIP_TAIL_MAX_EXAMS } from "./config";
 import { getPool } from "./db";
 
 export interface TopicRow {
@@ -210,7 +211,7 @@ export async function topicTail(subject: string, limit = 10): Promise<TopicRow[]
       WHERE c.standard_subject = $1
         AND c.topic IS NOT NULL
       GROUP BY c.topic
-     HAVING COUNT(DISTINCT ${EXAM_KEY_SQL}) <= 3
+     HAVING COUNT(DISTINCT ${EXAM_KEY_SQL}) <= ${SKIP_TAIL_MAX_EXAMS}
       ORDER BY exam_count ASC, total_marks ASC NULLS FIRST, c.topic
       LIMIT $2`,
     [subject, limit],

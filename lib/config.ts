@@ -54,6 +54,9 @@ export const TREND_MIN_YEARS = 3;
 /** Audit pct_figure at/above this adds the figure-methodology note. */
 export const FIGURE_HEAVY_SHARE = 0.25;
 
+/** Skip/deprioritize candidates must appear in at most this many exams. */
+export const SKIP_TAIL_MAX_EXAMS = 3;
+
 /** Upper bound on clusters fetched for a topic query — the exhaustive
  *  ("all questions") ceiling and the denominator for "top 10 of N". */
 export const MAX_TOPIC_CLUSTERS = 150;

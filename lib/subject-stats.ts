@@ -5,6 +5,7 @@ import { getPool } from "./db";
 export interface SubjectStats {
   exams: number;
   questions: number;
+  clusters: number;
   distinct_years: number;
   pct_figure: number;
   text_twin_risk: number;
@@ -26,7 +27,7 @@ export async function getSubjectStats(subject: string): Promise<SubjectStats | n
   let v: SubjectStats | null = null;
   try {
     const res = await getPool().query(
-      `SELECT exams, questions, distinct_years,
+      `SELECT exams, questions, COALESCE(clusters, 0) AS clusters, distinct_years,
               COALESCE(pct_figure, 0)::float AS pct_figure,
               COALESCE(text_twin_risk, 0)::float AS text_twin_risk
          FROM subject_stats WHERE standard_subject = $1`,
