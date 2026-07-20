@@ -3,6 +3,7 @@ import { generateText } from "./gemini";
 import { refusalMessage } from "./scope";
 import type { SearchHit } from "./search";
 import type { TopicRow } from "./topics";
+import type { YearTrend } from "./trends";
 
 /** Appended to answers that work through a specific problem. */
 export const SOLUTION_CAUTION =
@@ -124,6 +125,39 @@ export function formatTopicWeightageAnswer(
   parts.push(
     `The full ranking of ${topics.length} topic${topics.length === 1 ? "" : "s"} below is counted over distinct exams — expand any topic to see the actual questions it covers.`,
   );
+  return parts.join(" ");
+}
+
+/** YEAR_TREND: deterministic summary naming staples, risers and faders. */
+export function formatYearTrendAnswer(subject: string, trend: YearTrend): string {
+  const { years, rising, staples, faded } = trend;
+  const span = `${years[0]}–${years[years.length - 1]}`;
+  const byName = new Map(trend.topics.map((t) => [t.topic, t]));
+  const parts: string[] = [`**How ${subject} topics moved across ${span}:**`];
+  if (staples.length > 0) {
+    parts.push(
+      `Steady staples: ${staples
+        .map((n) => `**${n}** (${byName.get(n)?.exam_count ?? "?"} exams)`)
+        .join(", ")} — asked in nearly every year.`,
+    );
+  }
+  if (rising.length > 0) {
+    parts.push(
+      `Newer on the scene: ${rising
+        .map((n) => `**${n}** (first seen ${byName.get(n)?.first_year ?? "recently"})`)
+        .join(", ")}.`,
+    );
+  } else {
+    parts.push("Nothing brand-new has entered the papers in the last couple of years.");
+  }
+  if (faded.length > 0) {
+    parts.push(
+      `Quietly faded: ${faded
+        .map((n) => `**${n}** (last seen ${byName.get(n)?.last_year ?? "a while ago"})`)
+        .join(", ")}.`,
+    );
+  }
+  parts.push("Per-year exam counts for each topic below.");
   return parts.join(" ");
 }
 

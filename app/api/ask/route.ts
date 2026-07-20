@@ -14,6 +14,7 @@ import {
   formatAnalyticsAnswer,
   formatTopicAnalyticsAnswer,
   formatTopicWeightageAnswer,
+  formatYearTrendAnswer,
   guardOutput,
   normalizeCitations,
   stripContradictoryPreamble,
@@ -33,6 +34,7 @@ import { greetingMessage, isGreeting, prefilterAbuse, refusalMessage } from "@/l
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
 import { topicQuestions, topicTail, topicWeightage, totalExams } from "@/lib/topics";
+import { yearTrend } from "@/lib/trends";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -219,6 +221,28 @@ export async function POST(req: Request) {
         answer: formatAnalyticsAnswer(subject, clusters, sources, note),
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
         ...(note ? { filters: { year, exam_type: examType } } : {}),
+      });
+    }
+
+    if (intent === "YEAR_TREND") {
+      const trend = await yearTrend(subject);
+      if (!trend) {
+        // Subject not labeled yet — same graceful analytics fallback as
+        // the other topic-level intents.
+        const clusters = await topClusters(subject, TOP_K);
+        const sources = await clusterSources(clusters.map((c) => c.cluster_id));
+        return respond({
+          intent: "ANALYTICS",
+          answer:
+            `Topics aren't labeled for **${subject}** yet, so year-wise trends aren't available — here are the most repeated questions instead.\n\n` +
+            (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
+          clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        });
+      }
+      return respond({
+        intent,
+        answer: formatYearTrendAnswer(subject, trend),
+        trend: { years: trend.years, topics: trend.topics },
       });
     }
 

@@ -41,10 +41,20 @@ export type Intent =
   | "ANALYTICS"
   | "TOPIC_ANALYTICS"
   | "TOPIC_WEIGHTAGE"
+  | "YEAR_TREND"
   | "STUDY_GUIDE"
   | "SEMANTIC"
   | "REFUSED"
   | "GREETING";
+
+export interface TrendTopicResult {
+  topic: string;
+  exam_count: number;
+  counts: number[];
+  first_year: string;
+  last_year: string;
+  status: "rising" | "staple" | "fading" | null;
+}
 
 export interface TopicResult {
   topic: string;
@@ -71,6 +81,8 @@ export interface AskResponse {
   filters?: { year?: string | null; exam_type?: string | null };
   /** True when the query asked for a prediction (answer leads with disclaimer). */
   predictive?: boolean;
+  /** YEAR_TREND: per-year distinct-exam counts by topic. */
+  trend?: { years: string[]; topics: TrendTopicResult[] };
   /** True when served from the response cache. */
   cached?: boolean;
   /** True when retrieval couldn't support an answer (honest no-answer path). */
