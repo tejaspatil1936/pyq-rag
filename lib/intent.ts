@@ -81,7 +81,7 @@ const FREQUENCY =
 // Subject-wide trend asks — checked AFTER topic extraction so "trend of
 // questions on TCP" stays topic-scoped.
 const YEAR_TREND_RE =
-  /year[-\s]?wise\s+trends?|\btrends?\b|what'?s\s+(?:hot|trending|rising)|rising\s+topics|hot\s+(?:topics|these\s+days|recently|right\s+now)|recent(?:ly)?\s+(?:hot|trending)/i;
+  /year[-\s]?wise\s+trends?|\btrend(?:s|ing)?\b|what'?s\s+(?:hot|rising)|rising\s+topics|hot\s+(?:topics|these\s+days|recently|right\s+now)|recent(?:ly)?\s+hot/i;
 
 const TOPIC_PATTERN =
   /(?:asked|asks?|come(?:s)?\s+up|appear(?:s)?|questions?)\s+(?:about|on|from|regarding|related\s+to|cover(?:ing)?|for)\s+(.+?)[?.!\s]*$/i;
@@ -202,17 +202,21 @@ export function classifyHeuristic(question: string): Classification {
     year,
     examType,
   };
-  if (STUDY_GUIDE_RE.test(q)) return { ...base, intent: "STUDY_GUIDE", topic: null };
-  if (WEIGHTAGE_RE.test(q)) return { ...base, intent: "TOPIC_WEIGHTAGE", topic: null };
   // "explain/how do I..." openers are content questions even when a topic
   // phrase follows ("how do I answer the question on paging").
-  if (!EXPLAIN_OPENER.test(q)) {
-    const topicMatch = TOPIC_PATTERN.exec(q) ?? TOPIC_PATTERN_PASSIVE.exec(q);
-    if (topicMatch) {
-      return { ...base, intent: "TOPIC_ANALYTICS", topic: topicMatch[1].trim() };
-    }
+  const topicMatch = EXPLAIN_OPENER.test(q)
+    ? null
+    : (TOPIC_PATTERN.exec(q) ?? TOPIC_PATTERN_PASSIVE.exec(q));
+  if (STUDY_GUIDE_RE.test(q)) return { ...base, intent: "STUDY_GUIDE", topic: null };
+  // Subject-wide trend asks outrank weightage ("which topics are trending"),
+  // but a named topic keeps trend queries topic-scoped.
+  if (!topicMatch && YEAR_TREND_RE.test(q)) {
+    return { ...base, intent: "YEAR_TREND", topic: null };
   }
-  if (YEAR_TREND_RE.test(q)) return { ...base, intent: "YEAR_TREND", topic: null };
+  if (WEIGHTAGE_RE.test(q)) return { ...base, intent: "TOPIC_WEIGHTAGE", topic: null };
+  if (topicMatch) {
+    return { ...base, intent: "TOPIC_ANALYTICS", topic: topicMatch[1].trim() };
+  }
   // Checked after topic extraction, and also rescues frequency questions
   // that start explain-like ("What are the most frequently asked questions?").
   if (FREQUENCY.test(q)) return { ...base, intent: "ANALYTICS", topic: null };
