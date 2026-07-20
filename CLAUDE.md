@@ -42,11 +42,11 @@ question papers. Two query types:
    → validate JSON → insert rows into `questions` → mark paper status='done'
    (or 'failed' with error message; never crash the run on one bad paper).
 3. Rate limiting + KEY ROTATION: GEMINI_API_KEYS is a comma-separated list of
-   free-tier keys. The LAST key is reserved for the runtime app and must never
-   be used by the pipeline. The pipeline rotates through the remaining pool:
+   free-tier keys, ALL shared between the pipeline and the runtime app. The
+   pipeline rotates through the full set:
    sleep between calls to stay under per-minute limits; on 429 or daily-quota
    errors, mark that key exhausted (with a cooldown timestamp) and switch to
-   the next pool key; when ALL pool keys are exhausted, exit cleanly — cron
+   the next key; when ALL keys are exhausted, exit cleanly — cron
    resumes later. Implement rotation as a small KeyManager class so both the
    extraction and any other Gemini call in the pipeline share it. Log which
    key index served each call (never log the key itself).
@@ -100,11 +100,14 @@ question papers. Two query types:
 
 ## Env vars / GitHub secrets
 - DATABASE_URL (Neon)
-- GEMINI_API_KEYS (comma-separated list of 1..N keys; currently 9 dev keys,
-  may change at any time. Last key = runtime-only, all others = ingestion
-  rotation pool. The code must read this dynamically — never hardcode a key
-  count anywhere.)
-- Backend /api/ask uses ONLY the last key. Pipeline uses ONLY the pool.
+- GEMINI_API_KEYS (comma-separated list of 1..N keys; may change at any
+  time. ALL keys are shared by both the runtime app and the pipeline: the
+  runtime rotates per request (random start per instance, cooldown on
+  per-minute 429s, benched until the next UTC day on daily-quota 429s), and
+  the pipeline rotates over the same set — it runs briefly on a schedule,
+  so collisions are acceptable. The code must read this dynamically — never
+  hardcode a key count anywhere; a single-key deployment must work.)
+- Backend /api/ask degrades gracefully only when every key is benched.
 
 ## Open source
 This repo is public/open source. Therefore:
