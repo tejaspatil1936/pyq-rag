@@ -45,15 +45,24 @@ export async function generateText(
     if (json) generationConfig.responseMimeType = "application/json";
     if (sendThinkingConfig) generationConfig.thinkingConfig = { thinkingLevel: "minimal" };
 
-    const resp = await fetch(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${runtimeKey()}`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        contents: [{ parts: [{ text: prompt }] }],
-        generationConfig,
-      }),
-      signal: AbortSignal.timeout(timeoutMs),
-    });
+    let resp: Response;
+    try {
+      resp = await fetch(`${API_BASE}/${GEMINI_MODEL}:generateContent?key=${runtimeKey()}`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          contents: [{ parts: [{ text: prompt }] }],
+          generationConfig,
+        }),
+        signal: AbortSignal.timeout(timeoutMs),
+      });
+    } catch (err) {
+      // Timeouts and network failures degrade like quota exhaustion —
+      // callers fall back to retrieval/analytics instead of a 500.
+      throw new GeminiUnavailable(
+        `Gemini unreachable (${err instanceof Error ? err.name : "network error"}) — try again shortly`,
+      );
+    }
 
     if (resp.ok) {
       const body = (await resp.json()) as {
