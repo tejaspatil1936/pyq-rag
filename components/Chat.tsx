@@ -113,7 +113,7 @@ export default function Chat({
       </header>
 
       <main className="flex-1 overflow-y-auto">
-        <div className="mx-auto max-w-2xl space-y-4 px-4 py-4">
+        <div className="mx-auto max-w-2xl space-y-5 px-4 py-4">
           {messages.length === 0 && !loading && (
             <div className="py-10 text-center">
               <p className="text-lg font-semibold text-slate-200">
@@ -175,7 +175,7 @@ export default function Chat({
                 type="button"
                 disabled={loading}
                 onClick={() => send(qa.question)}
-                className="shrink-0 rounded-full border border-indigo-800 bg-indigo-950 px-3 py-1.5 text-xs font-medium text-indigo-300 hover:bg-indigo-900 disabled:opacity-50"
+                className="min-h-11 shrink-0 rounded-full border border-indigo-800 bg-indigo-950 px-3.5 text-xs font-medium text-indigo-300 hover:bg-indigo-900 disabled:opacity-50"
               >
                 {qa.label}
               </button>
@@ -195,12 +195,12 @@ export default function Chat({
               placeholder={`Ask about ${subject}…`}
               maxLength={1000}
               enterKeyHint="send"
-              className="min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 py-2.5 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
+              className="min-h-11 min-w-0 flex-1 rounded-xl border border-slate-700 bg-slate-900 px-4 text-sm text-slate-100 outline-none placeholder:text-slate-500 focus:border-indigo-500 focus:ring-2 focus:ring-indigo-500/30"
             />
             <button
               type="submit"
               disabled={loading || !input.trim()}
-              className="shrink-0 rounded-xl bg-indigo-600 px-4 py-2.5 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
+              className="min-h-11 shrink-0 rounded-xl bg-indigo-600 px-4 text-sm font-semibold text-white hover:bg-indigo-700 disabled:opacity-40"
             >
               Ask
             </button>
