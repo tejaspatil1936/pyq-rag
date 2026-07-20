@@ -52,12 +52,12 @@ def load_subject_questions(conn, subject):
         return cur.fetchall()
 
 
-def assign_labels(embeddings):
+def assign_labels(embeddings, threshold):
     if len(embeddings) == 1:
         return np.zeros(1, dtype=int)
     clustering = AgglomerativeClustering(
         n_clusters=None,
-        distance_threshold=1.0 - config.CLUSTER_COSINE_THRESHOLD,
+        distance_threshold=1.0 - threshold,
         metric="cosine",
         linkage="average",
     )
@@ -65,6 +65,7 @@ def assign_labels(embeddings):
 
 
 def rebuild_subject(conn, subject):
+    threshold = config.CLUSTER_THRESHOLD_OVERRIDES.get(subject, config.CLUSTER_COSINE_THRESHOLD)
     rows = load_subject_questions(conn, subject)
     if not rows:
         return 0
@@ -79,7 +80,7 @@ def rebuild_subject(conn, subject):
     # Normalize so cosine math is dot products (embeddings are stored
     # normalized, but don't depend on it).
     X /= np.maximum(np.linalg.norm(X, axis=1, keepdims=True), 1e-12)
-    labels = assign_labels(X)
+    labels = assign_labels(X, threshold)
 
     with conn:
         with conn.cursor() as cur:
@@ -122,13 +123,18 @@ def rebuild_subject(conn, subject):
 def main():
     logging.basicConfig(level=logging.INFO, format="%(asctime)s %(levelname)s %(name)s: %(message)s")
     parser = argparse.ArgumentParser(description=__doc__)
+    parser.add_argument("--subjects", type=str, default=None,
+                        help="comma-separated subjects to force-recluster (e.g. after a threshold override)")
     parser.add_argument("--all", action="store_true",
                         help="recluster every subject, not just ones with new questions")
     args = parser.parse_args()
 
     conn = db.get_conn()
     try:
-        subjects = subjects_to_recluster(conn, args.all)
+        if args.subjects:
+            subjects = [x.strip() for x in args.subjects.split(",") if x.strip()]
+        else:
+            subjects = subjects_to_recluster(conn, args.all)
         log.info("%d subject(s) to (re)cluster", len(subjects))
         for subject in subjects:
             rebuild_subject(conn, subject)

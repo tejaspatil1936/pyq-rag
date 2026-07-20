@@ -43,6 +43,15 @@ EMBED_BATCH_SIZE = 256        # questions fetched/updated per DB round-trip
 CLUSTER_COSINE_THRESHOLD = 0.80   # similarity >= this => same cluster
 MAX_CLUSTER_SUBJECT_SIZE = 12_000 # agglomerative is O(n^2); guard runner memory
 
+# Formula/figure-heavy subjects merge distinct questions at 0.80 (audit:
+# high text-twin risk) — cluster them stricter. audit_subjects.py ranks the
+# candidates; additions here take effect on the next recluster of the subject.
+CLUSTER_THRESHOLD_OVERRIDES = {
+    "Network Analysis Techniques": 0.88,
+    "Structural Analysis": 0.88,
+    "Solid Mechanics": 0.88,
+}
+
 # --- Topic labeling ---
 TOPIC_LABEL_BATCH = 40            # clusters labeled per Gemini call
 TOPIC_MERGE_THRESHOLD = 0.85      # label-embedding similarity >= this => same topic
