@@ -1,5 +1,14 @@
 import { beforeAll, describe, expect, it } from "vitest";
 
+import { BANNED_PHRASES, countWords } from "../../lib/quality";
+
+/** Live prose must obey the answer-quality contract (with retry headroom). */
+function expectQualityProse(answer: string, capWords: number) {
+  expect(countWords(answer)).toBeLessThanOrEqual(Math.round(capWords * 1.4));
+  for (const re of BANNED_PHRASES) expect(answer).not.toMatch(re);
+  expect(answer.trim()).toMatch(/^\*\*[^*]/); // bold verdict line first
+}
+
 /**
  * Black-box tests for the deployed API surface. Requires a running server:
  *   npm run dev            # then: npm run test:api
@@ -135,6 +144,8 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.intent).toBe("SEMANTIC");
     expect(body.answer).toBeTruthy();
     expect(body.answer).toMatch(/\[\d+\]/); // inline citation markers
+    // answer-quality contract for explanations
+    expectQualityProse(body.answer!, 200);
     const citations = body.citations ?? [];
     expect(citations.length).toBeGreaterThan(0);
     expect(citations.length).toBeLessThanOrEqual(10);
@@ -315,6 +326,8 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(named.length).toBeGreaterThan(0);
     // internal data-block vocabulary must never leak into prose
     expect(body.answer).not.toMatch(/topic_weightage_data|rarely_asked_topics|<\/?[a-z_]+>/i);
+    // answer-quality contract: cap, banned phrases, verdict-first
+    expectQualityProse(body.answer!, 120);
     studyPlan1st = body.answer!;
   }, 120_000);
 
