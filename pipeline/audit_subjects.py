@@ -47,6 +47,19 @@ FIGURE_RE = (
 
 NORM_TEXT_SQL = "lower(regexp_replace(question_text, '\\s+', ' ', 'g'))"
 
+# Label-contamination heuristics: a question whose text contains the
+# contradicting modifier but NOT the label's own modifier is probably filed
+# under the wrong topic ("singly linked list" question labeled "Doubly
+# Linked List Operations"). Deliberately narrow, unambiguous pairs only.
+CONTRADICTIONS = [
+    ("doubly", "singly"),
+    ("singly", "doubly"),
+    ("directed", "undirected"),
+    ("undirected", "directed"),
+    ("max heap", "min heap"),
+    ("min heap", "max heap"),
+]
+
 
 def backfill_has_figure(conn):
     with conn:
@@ -137,6 +150,33 @@ def compute_stats(conn):
             log.info("subject_stats rebuilt: %d subjects", cur.fetchone()[0])
 
 
+def compute_contamination(conn):
+    """Count label-contradicting questions per subject into subject_stats."""
+    conds = []
+    params = []
+    for label_kw, text_kw in CONTRADICTIONS:
+        conds.append(
+            "(c.topic ILIKE %s AND q.question_text ~* %s AND q.question_text !~* %s)"
+        )
+        params.extend([f"%{label_kw}%", rf"\m{text_kw}\M", rf"\m{label_kw}\M"])
+    with conn:
+        with conn.cursor() as cur:
+            cur.execute("ALTER TABLE subject_stats ADD COLUMN IF NOT EXISTS label_contamination INTEGER")
+            cur.execute("UPDATE subject_stats SET label_contamination = 0")
+            cur.execute(
+                f"""
+                UPDATE subject_stats ss SET label_contamination = x.n FROM (
+                    SELECT c.standard_subject AS subject, COUNT(*)::int AS n
+                      FROM questions q JOIN clusters c ON c.id = q.cluster_id
+                     WHERE {" OR ".join(conds)}
+                     GROUP BY 1
+                ) x WHERE ss.standard_subject = x.subject
+                """,
+                params,
+            )
+            log.info("label contamination computed")
+
+
 def report(conn, top):
     def rows(sql, params=()):
         with conn.cursor() as cur:
@@ -168,6 +208,10 @@ def report(conn, top):
             "BIGGEST SINGLE CLUSTERS (over-merge suspects)",
             "SELECT standard_subject, max_cluster_size, max_cluster_texts FROM subject_stats ORDER BY max_cluster_size DESC LIMIT %s",
         ),
+        (
+            "LABEL CONTAMINATION (contradicting-keyword questions)",
+            "SELECT standard_subject, label_contamination, questions FROM subject_stats WHERE label_contamination > 0 ORDER BY label_contamination DESC LIMIT %s",
+        ),
     ]
     for title, sql in sections:
         print(f"\n=== {title} ===")
@@ -191,6 +235,7 @@ def main():
     try:
         backfill_has_figure(conn)
         compute_stats(conn)
+        compute_contamination(conn)
         report(conn, args.top)
     finally:
         conn.close()

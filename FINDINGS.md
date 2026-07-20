@@ -59,3 +59,15 @@ annotations) papers over the symptoms; these are the causes.
    near-duplicate label variants can persist below the 0.85 merge
    threshold across subjects (spot-checked, not exhaustively audited).
    The audit's `pct_labeled` is 100% corpus-wide as of this run.
+
+9. **Label contamination (measured, not fixed)** — the audit's
+   contradicting-keyword check (`audit_subjects.py`, `CONTRADICTIONS`
+   pairs) finds questions whose text contradicts their topic label:
+   - `Data Structures`: **12 questions** (mostly *singly*-linked-list
+     questions filed under `Doubly Linked List Operations` — the reported
+     case). They inflate that topic's count slightly.
+   - `Design of Steel Structures`: 3 questions (directed/undirected-style
+     modifier mismatches in graph-adjacent phrasing).
+   Fixing means re-assigning those questions' clusters or refining labels —
+   a relabeling policy decision, so left untouched. The check runs on every
+   audit, so growth is visible.
