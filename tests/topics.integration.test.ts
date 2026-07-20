@@ -42,6 +42,13 @@ describe.skipIf(!hasDb)("topic weightage (live DB)", () => {
     }
   });
 
+  it("denominator invariant: every count fits the subject's real exam total", async () => {
+    for (const subject of ["Data Structures", "Structural Analysis", "Thermal Engineering"]) {
+      const [topics, total] = await Promise.all([topicWeightage(subject, 15), totalExams(subject)]);
+      for (const t of topics) expect(t.exam_count).toBeLessThanOrEqual(total);
+    }
+  });
+
   it("respects a requested size", async () => {
     const topics = await topicWeightage("Data Structures", 5);
     expect(topics.length).toBe(5);

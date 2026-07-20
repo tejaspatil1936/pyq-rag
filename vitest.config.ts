@@ -11,7 +11,7 @@ export default defineConfig({
   },
   test: {
     // tests/api is the black-box suite against a running server (test:api).
-    exclude: [...configDefaults.exclude, "tests/api/**"],
+    exclude: [...configDefaults.exclude, "tests/api/**", "tests/battery/**"],
     setupFiles: ["tests/setup.ts"],
     // Every worker opens its own pg pool against Neon's free tier; too many
     // parallel files exhaust its connection budget and time out connects.
