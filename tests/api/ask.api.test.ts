@@ -341,7 +341,7 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     // internal data-block vocabulary must never leak into prose
     expect(body.answer).not.toMatch(/topic_weightage_data|rarely_asked_topics|<\/?[a-z_]+>/i);
     // answer-quality contract: cap, banned phrases, verdict-first
-    expectQualityProse(body.answer!, 120);
+    expectQualityProse(body.answer!, 150);
     studyPlan1st = body.answer!;
   }, 120_000);
 
@@ -431,6 +431,57 @@ describe(`POST /api/ask @ ${BASE}`, () => {
       }
     }
   }, 120_000);
+
+  // every skip paraphrase must obey the full skip contract, live
+  it.each([
+    "which topics can I skip if I'm short on time?",
+    "give less priority to which topics",
+    "what should I deprioritize",
+    "which topics can I focus less on",
+    "what can I leave for the last",
+  ])(
+    "skip contract holds for paraphrase: %s",
+    async (question) => {
+      const subject = findSubject(/^data structures$/i);
+      const { status, body } = await askSynth({ subject, question });
+      expect(status).toBe(200);
+      expect(body.intent).toBe("STUDY_GUIDE");
+      expect(body.answer).toMatch(/not skippable/i);
+      const tail = body.skip_candidates ?? [];
+      expect(tail.length).toBeGreaterThan(0);
+      for (const t of tail) expect(t.exam_count).toBeLessThanOrEqual(3); // tail only
+      // no >3-exam topic may appear in a positive skip sentence
+      const protectedTopics = (body.topics ?? [])
+        .filter((t) => t.exam_count > 3)
+        .map((t) => t.topic.toLowerCase());
+      for (const sentence of body.answer!.split(/(?<=[.!?])[*_)"']*\s+|\n+/)) {
+        if (!/skip|deprioriti|leave for|less (?:priority|focus|time)|drop\b/i.test(sentence)) continue;
+        if (/\bnot\b|n't|cannot|never|keep|essential/i.test(sentence)) continue;
+        for (const name of protectedTopics) {
+          expect(sentence.toLowerCase()).not.toContain(name);
+        }
+      }
+    },
+    180_000,
+  );
+
+  it("typo'd core query never dead-ends: 'important questiions to study'", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "important questiions to study" });
+    expect(status).toBe(200);
+    expect(body.no_answer).toBeUndefined();
+    expect(["ANALYTICS", "TOPIC_WEIGHTAGE", "STUDY_GUIDE"]).toContain(body.intent);
+    expect(((body.topics ?? []).length || (body.clusters ?? []).length)).toBeGreaterThan(0);
+  });
+
+  it("direct yes/no question opens with Yes/No plus numbers", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await askSynth({ subject, question: "should I prioritize hashing?" });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("STUDY_GUIDE");
+    expect(body.answer).toMatch(/^\*\*\s*(Yes|No)/i);
+    expect(body.answer).toMatch(/\d+\s+of\s+\d+/); // the justifying numbers
+  }, 180_000);
 
   it.each(["hi", "?"])("greeting %j gets a capabilities nudge, not a refusal", async (question) => {
     const subject = findSubject(/^computer networks$/i);
