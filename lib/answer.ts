@@ -27,7 +27,7 @@ export function formatAnalyticsAnswer(
   filterNote: string | null = null,
 ): string {
   return formatClusterList(
-    `**Most frequently asked questions in ${subject}${filterNote ? ` — ${filterNote} papers only` : ""}** (counted over distinct exams; repeated uploads of the same paper count once):`,
+    `**Most frequently asked questions in ${subject}${filterNote ? ` — ${filterNote} papers only` : ""}:**`,
     clusters,
     sources,
     filterNote,
