@@ -5,6 +5,7 @@ export type Intent =
   | "ANALYTICS"
   | "TOPIC_ANALYTICS"
   | "TOPIC_WEIGHTAGE"
+  | "YEAR_TREND"
   | "STUDY_GUIDE"
   | "SEMANTIC";
 
@@ -51,7 +52,8 @@ If in scope, route it:
 ANALYTICS — ranked most-repeated QUESTIONS across the whole subject, optionally narrowed by year or exam type: "most repeated questions", "questions that came in 2024", "most asked in MSE", "last year's ESE".
 TOPIC_WEIGHTAGE — a ranking of TOPICS/concepts: "topic-wise weightage", "most important topics", "list 5 important topics", "which topics matter most". (Questions about SKIPPING or leaving out topics are STUDY_GUIDE, never TOPIC_WEIGHTAGE.)
 STUDY_GUIDE — wants strategy or a plan: "how to study", "what should I study first", "make me a study plan", "how do I prepare", "what can I skip".
-TOPIC_ANALYTICS — what or how often things are asked about one SPECIFIC named topic.
+YEAR_TREND — how topics changed over the years, with no specific topic named: "year-wise trend", "show me the year-wise trends", "what's hot recently", "which topics are rising".
+TOPIC_ANALYTICS — what or how often things are asked about one SPECIFIC named topic (including its trend over years).
 SEMANTIC — everything else: explain, understand, compare, answer content.
 
 Also produce:
@@ -74,7 +76,12 @@ const EXPLAIN_OPENER =
   /^(?:explain|define|derive|describe|compare|differentiate|discuss|solve|state|prove|why\b|what\s+is\b|what\s+are\b|how\s+(?:do|does|would|can|to)\b)/i;
 
 const FREQUENCY =
-  /most\s+(?:frequent(?:ly)?|repeated|common(?:ly)?|asked|important)|frequently\s+asked|important\s+questions?\b|how\s+(?:often|many\s+times)|repeated\s+questions?|weightage|year[-\s]?wise|trend|usually|gets?\s+asked|come(?:s)?\s+up|appears?\b|kitni\s+baar|sabse\s+(?:zyada|jyada)|baar\s+baar|(?:pucha|poocha)\s+(?:jata|jaata|gaya)|aata\s+hai|aate\s+hain/i;
+  /most\s+(?:frequent(?:ly)?|repeated|common(?:ly)?|asked|important)|frequently\s+asked|important\s+questions?\b|how\s+(?:often|many\s+times)|repeated\s+questions?|weightage|year[-\s]?wise|usually|gets?\s+asked|come(?:s)?\s+up|appears?\b|kitni\s+baar|sabse\s+(?:zyada|jyada)|baar\s+baar|(?:pucha|poocha)\s+(?:jata|jaata|gaya)|aata\s+hai|aate\s+hain/i;
+
+// Subject-wide trend asks — checked AFTER topic extraction so "trend of
+// questions on TCP" stays topic-scoped.
+const YEAR_TREND_RE =
+  /year[-\s]?wise\s+trends?|\btrends?\b|what'?s\s+(?:hot|trending|rising)|rising\s+topics|hot\s+(?:topics|these\s+days|recently|right\s+now)|recent(?:ly)?\s+(?:hot|trending)/i;
 
 const TOPIC_PATTERN =
   /(?:asked|asks?|come(?:s)?\s+up|appear(?:s)?|questions?)\s+(?:about|on|from|regarding|related\s+to|cover(?:ing)?|for)\s+(.+?)[?.!\s]*$/i;
@@ -205,6 +212,7 @@ export function classifyHeuristic(question: string): Classification {
       return { ...base, intent: "TOPIC_ANALYTICS", topic: topicMatch[1].trim() };
     }
   }
+  if (YEAR_TREND_RE.test(q)) return { ...base, intent: "YEAR_TREND", topic: null };
   // Checked after topic extraction, and also rescues frequency questions
   // that start explain-like ("What are the most frequently asked questions?").
   if (FREQUENCY.test(q)) return { ...base, intent: "ANALYTICS", topic: null };
@@ -270,6 +278,7 @@ export async function classifyIntent(
       intent === "ANALYTICS" ||
       intent === "SEMANTIC" ||
       intent === "TOPIC_WEIGHTAGE" ||
+      intent === "YEAR_TREND" ||
       intent === "STUDY_GUIDE"
     ) {
       return { inScope: true, intent, topic: null, ...shared };
