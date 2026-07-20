@@ -1,9 +1,10 @@
 """Rotation over the Gemini API key pool.
 
-GEMINI_API_KEYS is a comma-separated list of 1..N free-tier keys. The LAST
-key is reserved for the runtime app (/api/ask) and must never be used by the
-pipeline; every other key forms the ingestion rotation pool. The pool size is
-derived from the env var at runtime — no key count is hardcoded anywhere.
+GEMINI_API_KEYS is a comma-separated list of 1..N free-tier keys, ALL shared
+between the pipeline and the runtime app: the runtime rotates per request
+with its own cooldown handling, and the pipeline runs briefly on a schedule,
+so collisions are acceptable. The pool size is derived from the env var at
+runtime — no key count is hardcoded anywhere.
 
 Key *indexes* are logged so calls can be attributed; key values never are.
 """
@@ -35,14 +36,7 @@ class KeyManager:
             keys = [k.strip() for k in raw.split(",") if k.strip()]
         if not keys:
             raise RuntimeError("GEMINI_API_KEYS is not set — see .env.example")
-        if len(keys) == 1:
-            log.warning(
-                "only ONE Gemini key configured; the pipeline will share it "
-                "with the runtime app (add more keys to separate them)"
-            )
-            self._keys = list(keys)
-        else:
-            self._keys = list(keys[:-1])  # last key is runtime-only
+        self._keys = list(keys)  # all keys rotate; the runtime shares them
         self._cooldown_until = [0.0] * len(self._keys)
         self._rr = 0
         log.info("ingestion key pool: %d key(s) (of %d configured)", len(self._keys), len(keys))

@@ -5,7 +5,7 @@ import { closePool } from "../lib/db";
 import { listSubjects } from "../lib/subjects";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
-// Semantic synthesis needs the reserved runtime Gemini key; the analytics
+// Semantic synthesis needs a live Gemini key (rotated pool); the analytics
 // path is deterministic SQL + formatting and runs without any key.
 const hasGemini = Boolean(process.env.GEMINI_API_KEYS);
 
