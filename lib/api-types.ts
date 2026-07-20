@@ -30,6 +30,8 @@ export interface ClusterResult {
   figure_share?: number;
   distinct_texts?: number;
   sources: PaperSource[];
+  /** TRUE total distinct source papers (sources is a capped preview). */
+  source_total?: number;
 }
 
 export interface Citation {
@@ -77,6 +79,8 @@ export interface TopicResult {
 
 export interface AskResponse {
   intent: Intent;
+  /** Echoed on topic-bearing responses (lazy loads need it). */
+  subject?: string;
   answer: string;
   topic?: string;
   clusters?: ClusterResult[];

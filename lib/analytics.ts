@@ -177,15 +177,22 @@ export async function topicClusters(
   return res.rows as TopicClusterRow[];
 }
 
+export interface ClusterSourceInfo {
+  /** Preview slice (newest first), capped at perCluster. */
+  list: PaperSource[];
+  /** TRUE total distinct source papers — labels must use this, never list.length. */
+  total: number;
+}
+
 /**
- * Up to `perCluster` distinct source papers for each cluster id, newest
- * years first — the citation links for the analytics answer.
+ * Source papers per cluster id, newest years first. The preview is capped;
+ * the true total rides along so no UI can present the slice as the whole.
  */
 export async function clusterSources(
   clusterIds: number[],
   perCluster = 3,
-): Promise<Map<number, PaperSource[]>> {
-  const sources = new Map<number, PaperSource[]>();
+): Promise<Map<number, ClusterSourceInfo>> {
+  const sources = new Map<number, ClusterSourceInfo>();
   if (clusterIds.length === 0) return sources;
 
   const res = await getPool().query(
@@ -198,16 +205,17 @@ export async function clusterSources(
   );
 
   for (const row of res.rows as ({ cluster_id: number } & PaperSource)[]) {
-    const list = sources.get(row.cluster_id) ?? [];
-    if (list.length < perCluster) {
-      list.push({
+    const info = sources.get(row.cluster_id) ?? { list: [], total: 0 };
+    info.total++;
+    if (info.list.length < perCluster) {
+      info.list.push({
         file_name: row.file_name,
         year: row.year,
         exam_type: row.exam_type,
         url: row.url,
       });
-      sources.set(row.cluster_id, list);
     }
+    sources.set(row.cluster_id, info);
   }
   return sources;
 }

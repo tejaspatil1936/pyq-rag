@@ -208,6 +208,7 @@ export async function POST(req: Request) {
         const questions = await topicQuestions(subject, topics.map((t) => t.topic));
         return respond({
           intent: "TOPIC_WEIGHTAGE",
+          subject,
           predictive: true,
           answer: PREDICTION_DISCLAIMER + formatTopicWeightageAnswer(subject, topics, total),
           topics: topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
@@ -222,7 +223,10 @@ export async function POST(req: Request) {
         answer:
           PREDICTION_DISCLAIMER +
           (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
-        clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        clusters: clusters.map((c) => {
+          const src = sources.get(c.cluster_id);
+          return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
+        }),
       });
     }
 
@@ -261,7 +265,10 @@ export async function POST(req: Request) {
       return respond({
         intent,
         answer,
-        clusters: annotated.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        clusters: annotated.map((c) => {
+          const src = sources.get(c.cluster_id);
+          return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
+        }),
         total_exams: analyticsTotal,
         ...(small ? { small_corpus: true } : {}),
         ...(note ? { filters: { year, exam_type: examType } } : {}),
@@ -280,7 +287,10 @@ export async function POST(req: Request) {
           answer:
             `Topics aren't labeled for **${subject}** yet, so year-wise trends aren't available — here are the most repeated questions instead.\n\n` +
             (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
-          clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+          clusters: clusters.map((c) => {
+          const src = sources.get(c.cluster_id);
+          return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
+        }),
         });
       }
       return respond({
@@ -308,7 +318,10 @@ export async function POST(req: Request) {
           answer:
             `Topics aren't labeled for **${subject}** yet — here are the most repeated questions instead.\n\n` +
             (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
-          clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+          clusters: clusters.map((c) => {
+          const src = sources.get(c.cluster_id);
+          return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
+        }),
         });
       }
 
@@ -320,6 +333,7 @@ export async function POST(req: Request) {
       if (intent === "TOPIC_WEIGHTAGE") {
         return respond({
           intent,
+          subject,
           answer: formatTopicWeightageAnswer(subject, topics, total) + (smallW ? smallNote : ""),
           topics: topicsPayload,
           total_exams: total,
@@ -407,6 +421,7 @@ export async function POST(req: Request) {
       }
       return respond({
         intent,
+        subject,
         answer: planAnswer,
         topics: topicsPayload,
         total_exams: total,
@@ -489,7 +504,10 @@ export async function POST(req: Request) {
         total_exams: total,
         cluster_total: allClusters.length,
         ...(exhaustive ? { exhaustive: true } : {}),
-        clusters: annotated.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        clusters: annotated.map((c) => {
+          const src = sources.get(c.cluster_id);
+          return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
+        }),
         ...(small ? { small_corpus: true } : {}),
         ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
@@ -518,6 +536,7 @@ export async function POST(req: Request) {
           const questions = await topicQuestions(subject, wTopics.map((t) => t.topic));
           return respond({
             intent: "TOPIC_WEIGHTAGE",
+            subject,
             answer: formatTopicWeightageAnswer(subject, wTopics, wTotal),
             topics: wTopics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
             total_exams: wTotal,

@@ -106,9 +106,11 @@ describe.skipIf(!hasDb)("cluster analytics (live DB)", () => {
     const clusters = await topClusters(subject, 5);
     const sources = await clusterSources(clusters.map((c) => c.cluster_id));
     expect(sources.size).toBeGreaterThan(0);
-    for (const list of sources.values()) {
-      expect(list.length).toBeLessThanOrEqual(3);
-      for (const s of list) {
+    for (const info of sources.values()) {
+      expect(info.list.length).toBeLessThanOrEqual(3);
+      // the true total can never be smaller than the preview slice
+      expect(info.total).toBeGreaterThanOrEqual(info.list.length);
+      for (const s of info.list) {
         expect(s.url).toMatch(/^https?:\/\//);
         expect(s.file_name).toBeTruthy();
       }

@@ -1,4 +1,4 @@
-import type { ClusterRow, PaperSource } from "./analytics";
+import type { ClusterRow, ClusterSourceInfo, PaperSource } from "./analytics";
 import { PROSE_WORDS_EXPLAIN, PROSE_WORDS_STRATEGY } from "./config";
 import { generateText } from "./gemini";
 import { checkAnswerQuality } from "./quality";
@@ -23,7 +23,7 @@ export const PREDICTION_DISCLAIMER =
 export function formatAnalyticsAnswer(
   subject: string,
   clusters: ClusterRow[],
-  sources: Map<number, PaperSource[]>,
+  sources: Map<number, ClusterSourceInfo>,
   filterNote: string | null = null,
 ): string {
   return formatClusterList(
@@ -42,7 +42,7 @@ export function formatTopicAnalyticsAnswer(
   subject: string,
   topic: string,
   clusters: ClusterRow[],
-  sources: Map<number, PaperSource[]>,
+  sources: Map<number, ClusterSourceInfo>,
   stats: {
     topicExamCount: number;
     totalExams: number;
@@ -68,7 +68,7 @@ export function formatTopicAnalyticsAnswer(
 function formatClusterList(
   heading: string,
   clusters: ClusterRow[],
-  sources: Map<number, PaperSource[]>,
+  sources: Map<number, ClusterSourceInfo>,
   filterNote: string | null = null,
 ): string {
   const lines = [heading, ""];
@@ -91,12 +91,13 @@ function formatClusterList(
     lines.push(
       `${i + 1}. "${text}" — asked in **${c.exam_count}** exam${c.exam_count === 1 ? "" : "s"}${filterNote ? ` in ${filterNote}` : ""}${yearsPart}${twin}`,
     );
-    const src = sources.get(c.cluster_id) ?? [];
-    if (src.length > 0) {
+    const src = sources.get(c.cluster_id);
+    if (src && src.list.length > 0) {
+      const more = src.total > src.list.length ? ` (+${src.total - src.list.length} more)` : "";
       lines.push(
-        `   Sources: ${src
+        `   Sources: ${src.list
           .map((s) => `[${[s.year, s.exam_type].filter(Boolean).join(" ") || s.file_name}](${s.url})`)
-          .join(", ")}`,
+          .join(", ")}${more}`,
       );
     }
   });
@@ -173,7 +174,7 @@ export function formatYearTrendAnswer(subject: string, trend: YearTrend): string
         .join(", ")}.`,
     );
   }
-  parts.push("Per-year exam counts for each topic below.");
+  parts.push("Per-year exam counts for the top topics below.");
   return parts.join(" ");
 }
 
