@@ -35,6 +35,35 @@ export interface QualityVerdict {
   problems: string[];
 }
 
+/**
+ * Skip-contract guard, independent of the prompt: a skip-type answer must
+ * contain the literal words "not skippable" and must never name a protected
+ * (>3-exam) topic inside a positive skip/deprioritize sentence. Returns a
+ * human-readable violation, or null when clean.
+ */
+export function skipContractViolation(answer: string, protectedTopics: string[]): string | null {
+  if (!/not skippable/i.test(answer)) {
+    return 'missing the mandatory "not skippable" statement';
+  }
+  // Sentence boundaries may be wrapped in closing markdown ("skippable.**")
+  const sentences = answer.split(/(?<=[.!?])[*_)"']*\s+|\n+/);
+  for (const s of sentences) {
+    const skipTalk =
+      /\bskip|deprioriti[sz]|leave\s+(?:out|for\s+(?:the\s+)?last)|less\s+(?:priority|focus|time)|\bdrop(?:ped|ping)?\b|postpone|ignore/i.test(
+        s,
+      );
+    if (!skipTalk) continue;
+    // negated / protective sentences are fine ("X is not skippable")
+    if (/\bnot\b|n't\b|cannot|never|keep|essential|avoid/i.test(s)) continue;
+    for (const t of protectedTopics) {
+      if (t && s.toLowerCase().includes(t.toLowerCase())) {
+        return `names protected topic "${t}" as a skip candidate`;
+      }
+    }
+  }
+  return null;
+}
+
 export function checkAnswerQuality(
   answer: string,
   opts: { maxWords: number; requireVerdictFirst?: boolean },

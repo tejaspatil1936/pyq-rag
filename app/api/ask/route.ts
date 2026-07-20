@@ -13,6 +13,7 @@ import {
   SOLUTION_CAUTION,
   formatAnalyticsAnswer,
   formatTopicAnalyticsAnswer,
+  formatSkipFallback,
   formatTopicWeightageAnswer,
   formatYearTrendAnswer,
   guardOutput,
@@ -35,6 +36,7 @@ import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent, coerceClassification, isSkipQuery, type HistoryTurn } from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
 import { logEvent } from "@/lib/obs";
+import { skipContractViolation } from "@/lib/quality";
 import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/ratelimit";
 import { greetingMessage, isGreeting, prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
@@ -343,9 +345,40 @@ export async function POST(req: Request) {
       if (guardedPlan.flagged) {
         return respond({ intent: "REFUSED", answer: guardedPlan.answer });
       }
+      let planAnswer = stripInternalNames(guardedPlan.answer);
+
+      // Skip-contract guard, independent of the prompt: retry once with the
+      // concrete violation, then fall back to a deterministic safe answer —
+      // a >3-exam topic must never reach the student as a skip candidate.
+      if (tail !== null) {
+        const protectedTopics = topics.filter((t) => t.exam_count > 3).map((t) => t.topic);
+        let violation = skipContractViolation(planAnswer, protectedTopics);
+        if (violation) {
+          try {
+            const redo = await synthesizeStudyGuide(
+              subject,
+              question,
+              topics,
+              total,
+              topN,
+              history,
+              tail,
+              `Your previous draft violated the skip contract: ${violation}. Rewrite it obeying every rule.`,
+            );
+            planAnswer = stripInternalNames(guardOutput(redo, subject, question).answer);
+            violation = skipContractViolation(planAnswer, protectedTopics);
+          } catch {
+            // fall through to the deterministic answer
+          }
+          if (violation) {
+            logEvent({ evt: "skip_contract_fallback", subject, violation });
+            planAnswer = formatSkipFallback(subject, tail, topics, total);
+          }
+        }
+      }
       return respond({
         intent,
-        answer: stripInternalNames(guardedPlan.answer),
+        answer: planAnswer,
         topics: topicsPayload,
         total_exams: total,
         topic_count: stats.topic_count,
@@ -427,6 +460,26 @@ export async function POST(req: Request) {
     // beats synthesis — say so and suggest what the papers DO cover.
     const grounded = hits.filter((h) => h.similarity >= SEMANTIC_MIN_SIMILARITY);
     if (grounded.length < MIN_GROUNDING_HITS) {
+      // Safety net: a query built from core study vocabulary must never dead-
+      // end in no-answer — worst case it gets the weightage ranking.
+      if (/\b(important|topics?|questions?|study|repeated|weightage)\b/i.test(question)) {
+        const [wTopics, wTotal, wStats] = await Promise.all([
+          topicWeightage(subject, 10),
+          totalExams(subject),
+          topicStats(subject),
+        ]);
+        if (wTopics.length > 0) {
+          const questions = await topicQuestions(subject, wTopics.map((t) => t.topic));
+          return respond({
+            intent: "TOPIC_WEIGHTAGE",
+            answer: formatTopicWeightageAnswer(subject, wTopics, wTotal),
+            topics: wTopics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
+            total_exams: wTotal,
+            topic_count: wStats.topic_count,
+            total_appearances: wStats.total_appearances,
+          });
+        }
+      }
       // Suggest topic names — students think in concepts, not verbatim
       // question texts. Cluster texts remain the unlabeled-subject fallback.
       const topicRows = await topicWeightage(subject, 3);

@@ -1,6 +1,20 @@
 import { describe, expect, it } from "vitest";
 
-import { classifyHeuristic, coerceClassification, type Classification } from "../lib/intent";
+import {
+  classifyHeuristic,
+  coerceClassification,
+  isSkipQuery,
+  type Classification,
+} from "../lib/intent";
+
+export const SKIP_PARAPHRASES = [
+  "which topics can I skip if I'm short on time?",
+  "give less priority to which topics",
+  "what should I deprioritize",
+  "which topics can I focus less on",
+  "what can I leave for the last",
+  "kaunse topics kam important hain",
+];
 
 const cls = (partial: Partial<Classification>): Classification => ({
   inScope: true,
@@ -78,10 +92,19 @@ describe("classifyHeuristic", () => {
     expect(classifyHeuristic("explain the OSI model").year).toBeNull();
   });
 
-  it("skip phrasings land on the study guide, even via heuristic", () => {
-    expect(classifyHeuristic("which topics can I skip if I'm short on time?").intent).toBe(
-      "STUDY_GUIDE",
-    );
+  it.each(SKIP_PARAPHRASES)("skip paraphrase routes to the study guide: %s", (q) => {
+    expect(isSkipQuery(q)).toBe(true);
+    expect(classifyHeuristic(q).intent).toBe("STUDY_GUIDE");
+    // and coercion forces it there regardless of classifier drift
+    expect(coerceClassification(cls({ intent: "TOPIC_WEIGHTAGE" }), q).intent).toBe("STUDY_GUIDE");
+    expect(coerceClassification(cls({}), q).intent).toBe("STUDY_GUIDE");
+  });
+
+  it("'skip list' — the data structure — is never a skip query", () => {
+    expect(isSkipQuery("how many times has skip list been asked")).toBe(false);
+    const c = coerceClassification(cls({}), "how many times has skip list been asked");
+    expect(c.intent).toBe("TOPIC_ANALYTICS");
+    expect(c.topic).toMatch(/skip list/i);
   });
 
   it("coerceClassification corrects known classifier drift", () => {

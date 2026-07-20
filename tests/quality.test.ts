@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 
-import { checkAnswerQuality, countWords } from "../lib/quality";
+import { checkAnswerQuality, countWords, skipContractViolation } from "../lib/quality";
 
 describe("checkAnswerQuality", () => {
   const good =
@@ -47,5 +47,33 @@ describe("checkAnswerQuality", () => {
 
   it("counts prose words, not markdown or citation markers", () => {
     expect(countWords("**Two words** [1][2]")).toBe(2);
+  });
+});
+
+describe("skipContractViolation", () => {
+  const PROTECTED = ["Doubly Linked List Operations", "Hashing & Collision Resolution"];
+
+  it("passes a compliant skip answer", () => {
+    const s =
+      "**Skip only AVL Tree Rotations and Backtracking Algorithms.** The top topics like Doubly Linked List Operations are not skippable.\n- Skip **AVL Tree Rotations** — 1 of 49 exams.";
+    expect(skipContractViolation(s, PROTECTED)).toBeNull();
+  });
+
+  it("flags a missing 'not skippable' statement", () => {
+    expect(skipContractViolation("**Skip AVL Tree Rotations.**", PROTECTED)).toMatch(
+      /not skippable/,
+    );
+  });
+
+  it("flags a protected topic named as a skip candidate", () => {
+    const s =
+      "**Save time by dropping the low performers — the rest is not skippable.** You can skip Hashing & Collision Resolution to save time.";
+    expect(skipContractViolation(s, PROTECTED)).toMatch(/Hashing & Collision Resolution/);
+  });
+
+  it("does not flag protected topics inside protective sentences", () => {
+    const s =
+      "**Skip only the tail.** Never skip Doubly Linked List Operations — it is not skippable.";
+    expect(skipContractViolation(s, PROTECTED)).toBeNull();
   });
 });

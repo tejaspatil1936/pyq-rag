@@ -199,10 +199,11 @@ export async function synthesizeStudyGuide(
 
 VOICE — a friend's advice, not a report:
 - Short sentences. One idea each. Plain words.
-- Start with ONE bold verdict line naming the single most important move. Then at most 4 short bullets (or a Day-1/Day-2/Day-3 plan when the student asked for a plan — day labels are the only structure allowed).
+- Start with ONE bold verdict line naming the single most important move. If the student asked a direct yes/no question ("should I prioritize X?"), the verdict MUST open with **Yes** or **No** followed by the two numbers that justify it. If the student asked what to SKIP or deprioritize, the verdict MUST be about skipping (e.g. "**Skip only A and B — the top topics are not skippable.**"), never generic study advice.
+- Then at most 4 short bullets (or a Day-1/Day-2/Day-3 plan when the student asked for a plan — day labels are the only structure allowed). Each bullet may keep ONE short reasoning clause (exam coverage or marks).
 - Imperative voice: "Learn X first. Then drill Y." Never describe the data ("the data shows...").
 - Numbers, never adjectives: "**X** — 30 of ${totalExams} exams", not "very important".
-- Bold is ONLY for topic names and numbers.
+- Bold is ONLY for topic names, numbers, and Yes/No verdicts.
 - BANNED: filler openers ("To maximize your efficiency", "Hey there!", "It is important to note") and consultant-speak ("high-value area", "leverage", "delve", "be strategic about").
 - Hard cap: ${PROSE_WORDS_STRATEGY} words. The ranked table under your answer carries the detail — do not repeat it.
 
@@ -211,7 +212,7 @@ RULES:
 - Only call a topic "newer" or "rising" when its year list starts within the last two-to-three years; a topic present across many years (e.g. since 2017) is simply a staple — never describe it as rising.${
     rarelyAsked !== null
       ? `
-- The student is asking about SKIPPING: suggest skips ONLY from <rarely_asked_topics>. Every topic in <topic_weightage_data> appears in far too many exams to skip — say so using the exact phrase "not skippable" about those high-frequency topics.`
+- HARD CONSTRAINT — the student is asking about SKIPPING/deprioritizing: skip candidates may ONLY come from <rarely_asked_topics> (each appears in 3 exams or fewer). NEVER suggest skipping, deprioritizing, postponing, or spending less time on ANY topic from <topic_weightage_data>, no matter its rank. You MUST include the exact words "not skippable" about those high-frequency topics.`
       : ""
   }
 - ${sizeRule}
@@ -337,6 +338,31 @@ export function stripInternalNames(answer: string): string {
 }
 
 /**
+ * Deterministic last-resort skip answer: when even the corrective retry
+ * violates the skip contract, this replaces it — the contract can never
+ * reach the student broken.
+ */
+export function formatSkipFallback(
+  subject: string,
+  tail: TopicRow[],
+  topTopics: TopicRow[],
+  totalExams: number,
+): string {
+  const safe =
+    tail.length > 0
+      ? tail
+          .slice(0, 6)
+          .map((t) => `- **${t.topic}** — ${t.exam_count} of ${totalExams} exams`)
+          .join("\n")
+      : "- (nothing qualifies — every labeled topic appears in several exams)";
+  const top = topTopics
+    .slice(0, 3)
+    .map((t) => `**${t.topic}** (${t.exam_count})`)
+    .join(", ");
+  return `**Skip only the rarely-asked topics below — everything in the main list is not skippable.**\n\nSafe to deprioritize (each in ≤3 of ${totalExams} exams):\n${safe}\n\n${top} appear far too often to drop.`;
+}
+
+/**
  * Quality-enforced synthesis: draft, check against the prose contract
  * (length cap, banned phrases, verdict-first), retry ONCE with the concrete
  * violations, then serve the better draft. Availability beats polish — a
@@ -413,7 +439,7 @@ export async function synthesizeAnswer(
 
 VOICE — write like a friend explaining, not a report:
 - Short sentences. One idea each. Plain words a stressed student reads in seconds.
-- Start with ONE bold verdict line: the core answer in a single sentence. Then at most 4 short bullets OR 3 two-sentence paragraphs. Nothing else.
+- Start with ONE bold verdict line: the core answer in a single sentence. If the question is a direct yes/no, the verdict MUST open with **Yes** or **No** plus the numbers that justify it. Then at most 4 short bullets OR 3 two-sentence paragraphs. Nothing else.
 - Imperative voice: tell the student what to do ("Learn X first. Practice Y."), don't describe the data.
 - Numbers, never adjectives: "asked in 6 of 10 questions [1][2]", not "very frequent".
 - Bold is ONLY for topic names and numbers. No headers.

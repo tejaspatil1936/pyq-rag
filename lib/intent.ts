@@ -94,7 +94,7 @@ const TOPIC_PATTERN_PASSIVE =
 // Strategy/plan requests — checked BEFORE the explain-opener because
 // "how to study" starts explain-like but is not a content question.
 const STUDY_GUIDE_RE =
-  /how\s+(?:to|do\s+i|should\s+i|can\s+i)\s+(?:study|prepare|revise|start)|study\s+plan|revision\s+plan|what\s+(?:to|should\s+i)\s+study|prepare\s+for\s+(?:the\s+)?exam|where\s+(?:do\s+i|to|should\s+i)\s+(?:start|begin)|study\s+(?:1st|first)|\bskip\b|leave\s+out|kaise\s+padhu|kya\s+padhu/i;
+  /how\s+(?:to|do\s+i|should\s+i|can\s+i)\s+(?:study|prepare|revise|start)|study\s+plan|revision\s+plan|what\s+(?:to|should\s+i)\s+study|prepare\s+for\s+(?:the\s+)?exam|where\s+(?:do\s+i|to|should\s+i)\s+(?:start|begin)|study\s+(?:1st|first)|should\s+i\s+(?:prioriti[sz]e|focus\s+on)|kaise\s+padhu|kya\s+padhu/i;
 
 const WEIGHTAGE_RE =
   /weightage|important\s+topics?\b|which\s+topics|top\s+\d*\s*topics|topic[-\s]?wise|most\s+asked\s+topics|imp\s+topics?\b/i;
@@ -131,7 +131,10 @@ export function extractExamType(q: string): string | null {
   return m ? m[1].toUpperCase() : null;
 }
 
-const SKIP_RE = /\bskip(?:s|ped|ping)?\b|leave\s+out|deprioriti[sz]e/i;
+// Paraphrase-robust skip detection. (?!\s+lists?) keeps "skip list" — a real
+// Data Structures topic — out of the skip path.
+const SKIP_RE =
+  /\bskip(?:s|ped|ping)?\b(?!\s+lists?)|leave\s+(?:out|(?:it\s+)?for\s+(?:the\s+)?last)|deprioriti[sz]e|(?:give|assign)\s+(?:less|lower|least)\s+priority|focus\s+less|less\s+focus|lowest\s+priority|kam\s+important|not\s+worth\s+studying|ignore\s+for\s+now/i;
 
 /** Exported so the route only feeds the skip-tail to actual skip queries. */
 export function isSkipQuery(question: string): boolean {
@@ -167,7 +170,9 @@ function isFilterOnlyQuery(q: string): boolean {
  */
 export function coerceClassification(cls: Classification, question: string): Classification {
   let { intent, topic } = cls;
-  if (intent === "TOPIC_WEIGHTAGE" && SKIP_RE.test(question)) intent = "STUDY_GUIDE";
+  // ALL skip/deprioritize phrasings go through the constrained study-guide
+  // path — it is the only one with the rarely-asked tail and the skip guard.
+  if (intent !== "STUDY_GUIDE" && SKIP_RE.test(question)) intent = "STUDY_GUIDE";
   if (intent === "SEMANTIC" && (cls.year || cls.examType) && isFilterOnlyQuery(question)) {
     intent = "ANALYTICS";
   }
@@ -207,7 +212,9 @@ export function classifyHeuristic(question: string): Classification {
   const topicMatch = EXPLAIN_OPENER.test(q)
     ? null
     : (TOPIC_PATTERN.exec(q) ?? TOPIC_PATTERN_PASSIVE.exec(q));
-  if (STUDY_GUIDE_RE.test(q)) return { ...base, intent: "STUDY_GUIDE", topic: null };
+  if (SKIP_RE.test(q) || STUDY_GUIDE_RE.test(q)) {
+    return { ...base, intent: "STUDY_GUIDE", topic: null };
+  }
   // Subject-wide trend asks outrank weightage ("which topics are trending"),
   // but a named topic keeps trend queries topic-scoped.
   if (!topicMatch && YEAR_TREND_RE.test(q)) {

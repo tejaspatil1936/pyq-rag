@@ -31,7 +31,7 @@ export const MIN_GROUNDING_HITS = 2;
  * explanations may stretch when teaching requires it. Enforced server-side
  * with one corrective retry.
  */
-export const PROSE_WORDS_STRATEGY = 120;
+export const PROSE_WORDS_STRATEGY = 150;
 export const PROSE_WORDS_EXPLAIN = 200;
 
 /**
@@ -41,3 +41,11 @@ export const PROSE_WORDS_EXPLAIN = 200;
  */
 export const PRIORITY_MUST_RATIO = 0.35;
 export const PRIORITY_SHOULD_RATIO = 0.15;
+
+/**
+ * Question-row tiers use a different scale: individual questions repeat far
+ * less than whole topics, so tiers are relative to the LIST's top count —
+ * the #1 most-repeated question is always "Must know" (ratio 1.0).
+ */
+export const QUESTION_MUST_RATIO = 0.66;
+export const QUESTION_SHOULD_RATIO = 0.33;
