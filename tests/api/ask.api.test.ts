@@ -28,6 +28,8 @@ interface AskResponse {
   total_exams?: number;
   trend?: { years: string[]; topics: { topic: string; exam_count: number; counts: number[] }[] };
   topic_exam_count?: number;
+  cluster_total?: number;
+  exhaustive?: boolean;
   skip_candidates?: { topic: string; exam_count: number }[];
   filters?: { year?: string | null; exam_type?: string | null };
   predictive?: boolean;
@@ -540,6 +542,36 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.answer).toMatch(
       new RegExp(`^\\*\\*Doubly Linked List Operations\\*\\* appeared in \\*\\*${row!.exam_count}\\*\\*`),
     );
+    // count-noun accuracy: exams AND distinct questions, both stated
+    expect(body.answer).toMatch(/across \*\*\d+\*\* distinct question/);
+  });
+
+  it.each([
+    "all questions about doubly linked list",
+    "every question asked about doubly linked list",
+  ])("exhaustive list: %s returns the full set", async (question) => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("TOPIC_ANALYTICS");
+    expect(body.exhaustive).toBe(true);
+    expect(body.cluster_total).toBeGreaterThan(10);
+    expect((body.clusters ?? []).length).toBe(body.cluster_total);
+    expect(body.answer).toMatch(/All \d+ distinct question group/);
+  });
+
+  it("non-exhaustive topic answers state completeness honestly", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({
+      subject,
+      question: "what usually gets asked about doubly linked list",
+    });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("TOPIC_ANALYTICS");
+    expect((body.clusters ?? []).length).toBeLessThanOrEqual(10);
+    expect(body.cluster_total).toBeGreaterThan(10);
+    expect(body.answer).toMatch(/Showing top \d+ of \d+ distinct questions/);
+    expect(body.answer).toMatch(/ask for "all questions"/);
   });
 
   it("typo'd count query still leads with the exam total", async () => {

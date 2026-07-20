@@ -3,6 +3,7 @@ import { describe, expect, it } from "vitest";
 import {
   classifyHeuristic,
   coerceClassification,
+  isExhaustiveQuery,
   isSkipQuery,
   type Classification,
 } from "../lib/intent";
@@ -104,6 +105,13 @@ describe("classifyHeuristic", () => {
     expect(coerceClassification(cls({ intent: "TOPIC_ANALYTICS", topic: "hashing" }), "should I prioritize hashing?").intent).toBe(
       "STUDY_GUIDE",
     );
+  });
+
+  it("detects exhaustive-list phrasings", () => {
+    expect(isExhaustiveQuery("all questions about doubly linked list")).toBe(true);
+    expect(isExhaustiveQuery("every question asked about hashing")).toBe(true);
+    expect(isExhaustiveQuery("complete list of stack questions")).toBe(true);
+    expect(isExhaustiveQuery("what usually gets asked about hashing")).toBe(false);
   });
 
   it("'skip list' — the data structure — is never a skip query", () => {
