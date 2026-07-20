@@ -243,6 +243,88 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
   );
 }
 
+/**
+ * Topic question list with the TRUE total in the header (never the preview
+ * slice length). On first expand, the full count-ordered list lazy-loads
+ * from /api/topic-questions; the first 10 render, the rest fold behind
+ * "show more" — presentation folding over complete data.
+ */
+function TopicQuestionList({
+  subject,
+  topic,
+  preview,
+  total,
+}: {
+  subject: string;
+  topic: string;
+  preview: { text: string; exam_count: number }[];
+  total: number;
+}) {
+  const [full, setFull] = useState<{ text: string; exam_count: number }[] | null>(null);
+  const [state, setState] = useState<"idle" | "loading" | "failed">("idle");
+  const [showAll, setShowAll] = useState(false);
+
+  const load = () => {
+    if (full || state === "loading" || total <= preview.length) return;
+    setState("loading");
+    fetch(
+      `/api/topic-questions?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent(topic)}`,
+    )
+      .then((r) => (r.ok ? r.json() : Promise.reject(new Error(`HTTP ${r.status}`))))
+      .then((b: { questions: { text: string; exam_count: number }[] }) => {
+        setFull(b.questions);
+        setState("idle");
+      })
+      .catch(() => setState("failed"));
+  };
+
+  const questions = full ?? preview;
+  const visible = showAll ? questions : questions.slice(0, 10);
+  return (
+    <details className="mt-1.5" onToggle={(e) => e.currentTarget.open && load()}>
+      <summary
+        className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-slate-400 hover:text-indigo-400"
+        data-testid="topic-questions-summary"
+      >
+        Questions ({total})
+      </summary>
+      <ul className="space-y-1">
+        {visible.map((q, i) => (
+          <li
+            key={`${i}-${q.text.slice(0, 40)}`}
+            className="rounded-lg bg-slate-800/60 px-2.5 py-1.5 text-xs text-slate-300"
+          >
+            <ExpandableText text={q.text} />
+            <span className="mt-0.5 block text-[11px] text-slate-500">
+              asked in {q.exam_count} exam{q.exam_count === 1 ? "" : "s"}
+            </span>
+          </li>
+        ))}
+      </ul>
+      {state === "loading" && (
+        <p className="mt-1 text-[11px] text-slate-500">Loading all {total} questions…</p>
+      )}
+      {state === "failed" && (
+        <p className="mt-1 text-[11px] text-slate-500">
+          Couldn't load the full list — showing a preview of {questions.length}.
+        </p>
+      )}
+      {!showAll && questions.length > 10 && (
+        <button
+          type="button"
+          onClick={() => setShowAll(true)}
+          className="mt-1 flex min-h-11 items-center text-xs font-medium text-indigo-400 hover:text-indigo-300"
+        >
+          Show {questions.length - 10} more
+        </button>
+      )}
+      {state === "idle" && full === null && total > preview.length && (
+        <p className="mt-1 text-[11px] text-slate-500">Preview of {preview.length} shown.</p>
+      )}
+    </details>
+  );
+}
+
 function ClusterItem({
   cluster: c,
   rank,
@@ -293,7 +375,7 @@ function ClusterItem({
           {c.sources.length > 0 && (
             <details className="mt-2">
               <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-slate-400 hover:text-indigo-400">
-                Sources ({c.sources.length})
+                Sources ({c.source_total ?? c.sources.length})
               </summary>
               <ul className="space-y-1">
                 {c.sources.map((s) => (
@@ -311,6 +393,11 @@ function ClusterItem({
                   </li>
                 ))}
               </ul>
+              {(c.source_total ?? 0) > c.sources.length && (
+                <p className="mt-1 text-[11px] text-slate-500">
+                  Showing the {c.sources.length} most recent of {c.source_total} papers.
+                </p>
+              )}
             </details>
           )}
         </div>
@@ -349,6 +436,7 @@ export function splitDayPlan(
 
 function TopicAnswer({ res }: { res: AskResponse }) {
   const intent = res.intent as "TOPIC_WEIGHTAGE" | "STUDY_GUIDE";
+  const subject = res.subject ?? "";
   const topics = res.topics ?? [];
   const totalExams = res.total_exams ?? null;
   const dayPlan = intent === "STUDY_GUIDE" ? splitDayPlan(res.answer) : null;
@@ -389,6 +477,7 @@ function TopicAnswer({ res }: { res: AskResponse }) {
             {topics.map((t, i) => (
               <TopicItem
                 key={t.topic}
+                subject={subject}
                 topic={t}
                 rank={i + 1}
                 totalExams={totalExams}
@@ -405,6 +494,7 @@ function TopicAnswer({ res }: { res: AskResponse }) {
               {topics.map((t, i) => (
                 <TopicItem
                   key={t.topic}
+                  subject={subject}
                   topic={t}
                   rank={i + 1}
                   totalExams={totalExams}
@@ -419,11 +509,13 @@ function TopicAnswer({ res }: { res: AskResponse }) {
 }
 
 function TopicItem({
+  subject,
   topic: t,
   rank,
   totalExams,
   smallCorpus = false,
 }: {
+  subject: string;
   topic: TopicResult;
   rank: number;
   totalExams: number | null;
@@ -458,24 +550,12 @@ function TopicItem({
             {t.total_marks != null && <MutedPill>{t.total_marks} marks</MutedPill>}
           </div>
           {t.questions.length > 0 && (
-            <details className="mt-1.5">
-              <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-slate-400 hover:text-indigo-400">
-                Questions ({t.questions.length})
-              </summary>
-              <ul className="space-y-1">
-                {t.questions.map((q) => (
-                  <li
-                    key={q.text.slice(0, 80)}
-                    className="rounded-lg bg-slate-800/60 px-2.5 py-1.5 text-xs text-slate-300"
-                  >
-                    <ExpandableText text={q.text} />
-                    <span className="mt-0.5 block text-[11px] text-slate-500">
-                      asked in {q.exam_count} exam{q.exam_count === 1 ? "" : "s"}
-                    </span>
-                  </li>
-                ))}
-              </ul>
-            </details>
+            <TopicQuestionList
+              subject={subject}
+              topic={t.topic}
+              preview={t.questions}
+              total={t.cluster_count}
+            />
           )}
         </div>
       </div>
