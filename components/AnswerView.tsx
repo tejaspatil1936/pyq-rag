@@ -121,10 +121,13 @@ function StatStrip({
     parts.push(`top 3 cover ${Math.round((top3 / totalAppearances) * 100)}% of appearances`);
   }
   return (
-    <p className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-slate-400" data-testid="stat-strip">
-      {parts.join(" · ")}
+    <div
+      className="mb-2 flex flex-wrap items-center gap-x-2 text-xs text-slate-400"
+      data-testid="stat-strip"
+    >
+      <span>{parts.join(" · ")}</span>
       <MethodNote />
-    </p>
+    </div>
   );
 }
 
