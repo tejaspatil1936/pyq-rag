@@ -25,3 +25,19 @@ export const TOPIC_MATCH_THRESHOLD = Number(process.env.TOPIC_MATCH_THRESHOLD ??
  */
 export const SEMANTIC_MIN_SIMILARITY = Number(process.env.SEMANTIC_MIN_SIMILARITY ?? 0.45);
 export const MIN_GROUNDING_HITS = 2;
+
+/**
+ * Prose word caps for Gemini-written answers. Strategy answers stay tight;
+ * explanations may stretch when teaching requires it. Enforced server-side
+ * with one corrective retry.
+ */
+export const PROSE_WORDS_STRATEGY = 120;
+export const PROSE_WORDS_EXPLAIN = 200;
+
+/**
+ * Priority tiers for topic/analytics rows, as a fraction of the subject's
+ * total exams: >= MUST -> "Must know", >= SHOULD -> "Should know",
+ * below -> "If time permits".
+ */
+export const PRIORITY_MUST_RATIO = 0.35;
+export const PRIORITY_SHOULD_RATIO = 0.15;
