@@ -11,6 +11,8 @@ export interface SearchHit {
   exam_type: string | null;
   url: string;
   standard_subject: string;
+  /** Canonical topic label of the hit's cluster, when labeled. */
+  topic: string | null;
   similarity: number;
 }
 
@@ -34,7 +36,7 @@ export async function semanticSearch(
 ): Promise<SearchHit[]> {
   const res = await getPool().query(
     `SELECT question_id, question_text, marks, sub_label,
-            file_name, year, exam_type, url, standard_subject, similarity
+            file_name, year, exam_type, url, standard_subject, topic, similarity
        FROM (
          SELECT DISTINCT ON (norm_text) *
            FROM (
@@ -47,10 +49,12 @@ export async function semanticSearch(
                     p.exam_type,
                     p.url,
                     p.standard_subject,
+                    cl.topic,
                     1 - (q.embedding <=> $1::vector) AS similarity,
                     lower(regexp_replace(q.question_text, '\\s+', ' ', 'g')) AS norm_text
                FROM questions q
                JOIN papers p ON p.id = q.paper_id
+               LEFT JOIN clusters cl ON cl.id = q.cluster_id
               WHERE p.standard_subject = $2
                 AND q.embedding IS NOT NULL
            ) scored

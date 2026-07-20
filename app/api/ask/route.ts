@@ -44,6 +44,7 @@ import {
   labelExamCount,
   matchTopicLabel,
   topicQuestions,
+  topicStats,
   topicTail,
   topicWeightage,
   totalExams,
@@ -229,11 +230,15 @@ export async function POST(req: Request) {
           clusters: [],
         });
       }
-      const sources = await clusterSources(clusters.map((c) => c.cluster_id));
+      const [sources, analyticsTotal] = await Promise.all([
+        clusterSources(clusters.map((c) => c.cluster_id)),
+        totalExams(subject, filters), // denominator for the coverage bars
+      ]);
       return respond({
         intent,
         answer: formatAnalyticsAnswer(subject, clusters, sources, note),
         clusters: clusters.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
+        total_exams: analyticsTotal,
         ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
     }
@@ -262,7 +267,11 @@ export async function POST(req: Request) {
 
     if (intent === "TOPIC_WEIGHTAGE" || intent === "STUDY_GUIDE") {
       const limit = topN ?? (intent === "STUDY_GUIDE" ? 8 : 10);
-      const [topics, total] = await Promise.all([topicWeightage(subject, limit), totalExams(subject)]);
+      const [topics, total, stats] = await Promise.all([
+        topicWeightage(subject, limit),
+        totalExams(subject),
+        topicStats(subject),
+      ]);
 
       if (topics.length === 0) {
         // Subject not labeled yet: fall back to the analytics ranking rather
@@ -287,6 +296,8 @@ export async function POST(req: Request) {
           answer: formatTopicWeightageAnswer(subject, topics, total),
           topics: topicsPayload,
           total_exams: total,
+          topic_count: stats.topic_count,
+          total_appearances: stats.total_appearances,
         });
       }
 
@@ -337,6 +348,8 @@ export async function POST(req: Request) {
         answer: stripInternalNames(guardedPlan.answer),
         topics: topicsPayload,
         total_exams: total,
+        topic_count: stats.topic_count,
+        total_appearances: stats.total_appearances,
         ...(tail !== null
           ? { skip_candidates: tail.map((t) => ({ topic: t.topic, exam_count: t.exam_count })) }
           : {}),
@@ -446,6 +459,7 @@ export async function POST(req: Request) {
       exam_type: h.exam_type,
       url: h.url,
       standard_subject: h.standard_subject,
+      topic: h.topic,
       similarity: h.similarity,
     }));
 

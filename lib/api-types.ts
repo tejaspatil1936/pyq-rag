@@ -19,6 +19,8 @@ export interface ClusterResult {
   question_count: number;
   exam_count: number;
   years_spanned: string | null;
+  /** Canonical topic label, when the labeling job has covered this cluster. */
+  topic?: string | null;
   /** Present only on TOPIC_ANALYTICS results. */
   topic_similarity?: number;
   sources: PaperSource[];
@@ -34,6 +36,8 @@ export interface Citation {
   exam_type: string | null;
   url: string;
   standard_subject: string;
+  /** Canonical topic label of the cited question's cluster, when labeled. */
+  topic?: string | null;
   similarity: number;
 }
 
@@ -83,6 +87,10 @@ export interface AskResponse {
   predictive?: boolean;
   /** YEAR_TREND: per-year distinct-exam counts by topic. */
   trend?: { years: string[]; topics: TrendTopicResult[] };
+  /** Total labeled topics for the subject (stat strip). */
+  topic_count?: number;
+  /** Sum of per-topic exam appearances (stat-strip share denominator). */
+  total_appearances?: number;
   /** True when served from the response cache. */
   cached?: boolean;
   /** True when retrieval couldn't support an answer (honest no-answer path). */

@@ -5,6 +5,8 @@ import { toVectorLiteral } from "./embed";
 export interface ClusterRow {
   cluster_id: number;
   representative_text: string;
+  /** Canonical topic label, when the labeling job has covered this cluster. */
+  topic?: string | null;
   /** Raw extracted-question members (may include duplicate uploads). */
   question_count: number;
   /** Distinct exam sittings the cluster's question appeared in — the honest
@@ -97,12 +99,13 @@ export async function topClusters(
             c.representative_text,
             c.question_count::int AS question_count,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
-            c.years_spanned
+            c.years_spanned,
+            c.topic
        FROM clusters c
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $1${FILTER_SQL("$3", "$4")}
-      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
+      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned, c.topic
       ORDER BY exam_count DESC, c.question_count DESC, c.id
       LIMIT $2`,
     [subject, limit, filters.year ?? null, filters.examType ?? null],
@@ -134,13 +137,14 @@ export async function topicClusters(
             c.question_count::int AS question_count,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
             c.years_spanned,
+            c.topic,
             1 - (AVG(q.embedding) <=> $1::vector) AS topic_similarity
        FROM clusters c
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $2
         AND q.embedding IS NOT NULL${FILTER_SQL("$5", "$6")}
-      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
+      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned, c.topic
      HAVING 1 - (AVG(q.embedding) <=> $1::vector) >= $3
       ORDER BY exam_count DESC, topic_similarity DESC, c.id
       LIMIT $4`,

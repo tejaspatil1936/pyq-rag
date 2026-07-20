@@ -58,6 +58,27 @@ export async function topicWeightage(subject: string, limit = 10): Promise<Topic
   }));
 }
 
+/** Full-distribution stats for the glanceable strip: how many labeled
+ *  topics exist and the sum of their per-topic exam appearances. */
+export async function topicStats(
+  subject: string,
+): Promise<{ topic_count: number; total_appearances: number }> {
+  const res = await getPool().query(
+    `SELECT COUNT(*)::int AS topic_count,
+            COALESCE(SUM(ec), 0)::int AS total_appearances
+       FROM (
+         SELECT COUNT(DISTINCT ${EXAM_KEY_SQL}) AS ec
+           FROM clusters c
+           JOIN questions q ON q.cluster_id = c.id
+           JOIN papers p ON p.id = q.paper_id
+          WHERE c.standard_subject = $1 AND c.topic IS NOT NULL
+          GROUP BY c.topic
+       ) t`,
+    [subject],
+  );
+  return res.rows[0];
+}
+
 const TOPIC_STOPWORDS = new Set([
   "the", "a", "an", "of", "and", "or", "in", "on", "for", "to", "with", "using", "its",
 ]);
@@ -144,6 +165,7 @@ export async function labelClusters(
     question_count: number;
     exam_count: number;
     years_spanned: string | null;
+    topic?: string | null;
   }[]
 > {
   const res = await getPool().query(
@@ -151,12 +173,13 @@ export async function labelClusters(
             c.representative_text,
             c.question_count::int AS question_count,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
-            c.years_spanned
+            c.years_spanned,
+            c.topic
        FROM clusters c
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $1 AND c.topic = $2${FILTER_SQL("$4", "$5")}
-      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
+      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned, c.topic
       ORDER BY exam_count DESC, c.question_count DESC, c.id
       LIMIT $3`,
     [subject, label, limit, filters.year ?? null, filters.examType ?? null],
