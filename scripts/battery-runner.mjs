@@ -11,10 +11,14 @@
 import fs from "node:fs";
 
 const BASE = process.env.API_BASE_URL ?? "http://localhost:3000";
-const [, , subjectsFile, resultsFile] = process.argv;
+const [, , subjectsFile, resultsFile, modeArg] = process.argv;
+// "full" = 9-query canonical battery; "smoke" = 3 cheap deterministic
+// queries asserting only the hard invariants (counts, denominators,
+// non-empty) — suitable for an all-subjects sweep.
+const MODE = modeArg === "smoke" ? "smoke" : "full";
 const SUBJECTS = fs.readFileSync(subjectsFile, "utf8").split(",").map((s) => s.trim()).filter(Boolean);
 
-const INTERNAL = /topic_weightage_data|rarely_asked_topics|retrieved_questions|<\/?[a-z_]+>/i;
+const INTERNAL = /topic_weightage_data|rarely_asked_topics|retrieved_questions|student_question|<\/?(?:topic_weightage_data|rarely_asked_topics|retrieved_questions|student_question|conversation)>/i;
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 async function ask(subject, question) {
@@ -59,6 +63,32 @@ function countsWithin(r) {
 }
 
 function checksFor(subject, ctx) {
+  if (MODE === "smoke") {
+    return [
+      ["most repeated questions", async () => {
+        const r = await ask(subject, "What are the most repeated questions?");
+        base(r);
+        countsWithin(r);
+        if (!(r.body.clusters ?? []).length) fail("no clusters");
+      }],
+      ["topic-wise weightage", async () => {
+        const r = await ask(subject, "topic-wise weightage");
+        base(r);
+        countsWithin(r);
+        for (const t of r.body.topics ?? []) {
+          if (t.cluster_count != null && (t.questions?.length ?? 0) > t.cluster_count) {
+            fail("preview longer than cluster_count");
+          }
+        }
+      }],
+      ["topic count query", async () => {
+        if (!ctx.topTopic) return;
+        const r = await ask(subject, `how many times has ${ctx.topTopic} been asked`);
+        base(r);
+        countsWithin(r);
+      }],
+    ];
+  }
   return [
     ["most repeated questions", async () => {
       const r = await ask(subject, "What are the most repeated questions?");
@@ -158,7 +188,8 @@ for (let si = 0; si < SUBJECTS.length; si++) {
     }
   }
   if (pre.body?.degraded) degradedSeen++;
-  console.log(`[${si + 1}/${SUBJECTS.length}] ${subject}: ${9 - subjFails}/9${subjFails ? ` (${subjFails} FAIL)` : ""}`);
+  const per = MODE === "smoke" ? 3 : 9;
+  console.log(`[${si + 1}/${SUBJECTS.length}] ${subject}: ${per - subjFails}/${per}${subjFails ? ` (${subjFails} FAIL)` : ""}`);
 }
 
 const summary = { subjects: SUBJECTS.length, passed, failed: failures.length, degraded_pretests: degradedSeen, failures };
