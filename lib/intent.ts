@@ -51,7 +51,7 @@ First decide scope. in_scope=true covers anything about studying ${subject}: its
 If in scope, route it:
 ANALYTICS — ranked most-repeated QUESTIONS across the whole subject, optionally narrowed by year or exam type: "most repeated questions", "questions that came in 2024", "most asked in MSE", "last year's ESE".
 TOPIC_WEIGHTAGE — a ranking of TOPICS/concepts: "topic-wise weightage", "most important topics", "list 5 important topics", "which topics matter most". (Questions about SKIPPING or leaving out topics are STUDY_GUIDE, never TOPIC_WEIGHTAGE.)
-STUDY_GUIDE — wants strategy or a plan: "how to study", "what should I study first", "make me a study plan", "how do I prepare", "what can I skip".
+STUDY_GUIDE — wants strategy or a plan: "how to study", "what should I study first", "make me a study plan", "how do I prepare", "what can I skip", "should I prioritize X".
 YEAR_TREND — how topics changed over the years, with no specific topic named: "year-wise trend", "show me the year-wise trends", "what's hot recently", "which topics are rising".
 TOPIC_ANALYTICS — what or how often things are asked about one SPECIFIC named topic (including its trend over years).
 SEMANTIC — everything else: explain, understand, compare, answer content.
@@ -173,6 +173,11 @@ export function coerceClassification(cls: Classification, question: string): Cla
   // ALL skip/deprioritize phrasings go through the constrained study-guide
   // path — it is the only one with the rarely-asked tail and the skip guard.
   if (intent !== "STUDY_GUIDE" && SKIP_RE.test(question)) intent = "STUDY_GUIDE";
+  // "should I prioritize/focus on X" is a strategy question: the study guide
+  // has the weightage numbers its Yes/No verdict must cite.
+  if (intent !== "STUDY_GUIDE" && /should\s+i\s+(?:prioriti[sz]e|focus\s+on|study)\b/i.test(question)) {
+    intent = "STUDY_GUIDE";
+  }
   if (intent === "SEMANTIC" && (cls.year || cls.examType) && isFilterOnlyQuery(question)) {
     intent = "ANALYTICS";
   }

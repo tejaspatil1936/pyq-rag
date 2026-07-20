@@ -100,6 +100,12 @@ describe("classifyHeuristic", () => {
     expect(coerceClassification(cls({}), q).intent).toBe("STUDY_GUIDE");
   });
 
+  it("'should I prioritize X' is coerced to the study guide", () => {
+    expect(coerceClassification(cls({ intent: "TOPIC_ANALYTICS", topic: "hashing" }), "should I prioritize hashing?").intent).toBe(
+      "STUDY_GUIDE",
+    );
+  });
+
   it("'skip list' — the data structure — is never a skip query", () => {
     expect(isSkipQuery("how many times has skip list been asked")).toBe(false);
     const c = coerceClassification(cls({}), "how many times has skip list been asked");
