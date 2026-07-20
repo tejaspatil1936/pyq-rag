@@ -17,6 +17,7 @@ interface AskResponse {
   degraded?: boolean;
   topics?: { topic: string; exam_count: number; questions: { text: string }[] }[];
   total_exams?: number;
+  trend?: { years: string[]; topics: { topic: string; exam_count: number; counts: number[] }[] };
   topic_exam_count?: number;
   skip_candidates?: { topic: string; exam_count: number }[];
   filters?: { year?: string | null; exam_type?: string | null };
@@ -425,6 +426,42 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.topic_exam_count).toBeGreaterThan(0);
     expect(body.total_exams).toBeGreaterThan(0);
     expect(body.answer).toMatch(/^\*\*.+\*\* appeared in \*\*\d+\*\* of \d+/); // line one
+  });
+
+  it("quick-action 'Show me the year-wise trends' gets a real trend, not the most-asked list", async () => {
+    const subject = findSubject(/^data structures$/i);
+    // exact phrasing the "Year-wise trend" button sends
+    const { status, body } = await ask({ subject, question: "Show me the year-wise trends" });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("YEAR_TREND");
+    expect(body.answer).not.toContain("Most frequently asked questions");
+    expect(body.trend).toBeDefined();
+    expect(body.trend!.years.length).toBeGreaterThan(2);
+    expect(body.trend!.topics.length).toBeGreaterThan(3);
+    for (const t of body.trend!.topics) {
+      expect(t.counts.length).toBe(body.trend!.years.length);
+    }
+    expect(body.answer).toMatch(/staple|Newer on the scene|faded/i);
+  });
+
+  it("label-matched topic count equals the weightage table's figure", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const weightage = await ask({ subject, question: "most important topics" });
+    expect(weightage.status).toBe(200);
+    const row = (weightage.body.topics ?? []).find((t) => t.topic === "Doubly Linked List Operations");
+    expect(row).toBeDefined();
+
+    const { status, body } = await ask({
+      subject,
+      question: "how many times has doubly linked list been asked",
+    });
+    expect(status).toBe(200);
+    expect(body.intent).toBe("TOPIC_ANALYTICS");
+    expect(body.topic).toBe("Doubly Linked List Operations"); // canonical label
+    expect(body.topic_exam_count).toBe(row!.exam_count); // same figure, same SQL
+    expect(body.answer).toMatch(
+      new RegExp(`^\\*\\*Doubly Linked List Operations\\*\\* appeared in \\*\\*${row!.exam_count}\\*\\*`),
+    );
   });
 
   it("typo'd count query still leads with the exam total", async () => {

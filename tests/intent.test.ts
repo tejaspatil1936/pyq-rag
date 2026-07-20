@@ -22,9 +22,16 @@ describe("classifyHeuristic", () => {
   it.each([
     "most repeated questions",
     "What are the most frequently asked questions?",
-    "show me the year-wise trends",
   ])("ANALYTICS: %s", (q) => {
     expect(classifyHeuristic(q).intent).toBe("ANALYTICS");
+  });
+
+  it.each([
+    "show me the year-wise trends",
+    "what's hot recently",
+    "which topics are trending over the years",
+  ])("YEAR_TREND: %s", (q) => {
+    expect(classifyHeuristic(q).intent).toBe("YEAR_TREND");
   });
 
   it.each([
