@@ -12,12 +12,7 @@ import {
   type TrendTopicResult,
   yearSpan,
 } from "@/lib/api-types";
-import {
-  PRIORITY_MUST_RATIO,
-  PRIORITY_SHOULD_RATIO,
-  QUESTION_MUST_RATIO,
-  QUESTION_SHOULD_RATIO,
-} from "@/lib/config";
+import { PRIORITY_MUST_RATIO, PRIORITY_SHOULD_RATIO } from "@/lib/config";
 
 /** Some papers carry the literal string "Unknown" for year/exam_type — hide it. */
 function known(value: string | null): string | null {
@@ -38,16 +33,6 @@ function priorityTier(examCount: number, total: number | null) {
   const ratio = examCount / total;
   if (ratio >= PRIORITY_MUST_RATIO) return TIER_STYLES.must;
   if (ratio >= PRIORITY_SHOULD_RATIO) return TIER_STYLES.should;
-  return TIER_STYLES.ifTime;
-}
-
-/** Question-level tiers: relative to the list's top count, so the #1
- *  most-repeated question is always "Must know". */
-function questionTier(examCount: number, maxInList: number | null) {
-  if (!maxInList || maxInList <= 0) return null;
-  const ratio = examCount / maxInList;
-  if (ratio >= QUESTION_MUST_RATIO) return TIER_STYLES.must;
-  if (ratio >= QUESTION_SHOULD_RATIO) return TIER_STYLES.should;
   return TIER_STYLES.ifTime;
 }
 
@@ -220,19 +205,39 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
       {(res.clusters?.length ?? 0) === 0 ? (
         <Prose>{res.answer}</Prose>
       ) : (
-        <ol className="space-y-3.5">
-          {res.clusters!.map((c, i) => (
-            <ClusterItem
-              key={c.cluster_id}
-              cluster={c}
-              rank={i + 1}
-              totalExams={res.total_exams ?? null}
-              maxExamCount={Math.max(...res.clusters!.map((x) => x.exam_count))}
-              filterNote={filterNote}
-              smallCorpus={res.small_corpus === true}
-            />
-          ))}
-        </ol>
+        <>
+          <ol className="space-y-3.5">
+            {res.clusters!.slice(0, 10).map((c, i) => (
+              <ClusterItem
+                key={c.cluster_id}
+                cluster={c}
+                rank={i + 1}
+                totalExams={res.total_exams ?? null}
+                filterNote={filterNote}
+                smallCorpus={res.small_corpus === true}
+              />
+            ))}
+          </ol>
+          {res.clusters!.length > 10 && (
+            <details className="mt-2">
+              <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-semibold text-slate-400 hover:text-indigo-400">
+                Show {res.clusters!.length - 10} more question groups
+              </summary>
+              <ol className="mt-2 space-y-3.5">
+                {res.clusters!.slice(10).map((c, i) => (
+                  <ClusterItem
+                    key={c.cluster_id}
+                    cluster={c}
+                    rank={i + 11}
+                    totalExams={res.total_exams ?? null}
+                    filterNote={filterNote}
+                    smallCorpus={res.small_corpus === true}
+                  />
+                ))}
+              </ol>
+            </details>
+          )}
+        </>
       )}
     </div>
   );
@@ -242,20 +247,18 @@ function ClusterItem({
   cluster: c,
   rank,
   totalExams,
-  maxExamCount = null,
   filterNote = null,
   smallCorpus = false,
 }: {
   cluster: ClusterResult;
   rank: number;
   totalExams: number | null;
-  maxExamCount?: number | null;
   filterNote?: string | null;
   smallCorpus?: boolean;
 }) {
   const span = yearSpan(c.years_spanned);
   const yearsChip = filterNote ? (span ? `asked since ${span.split("–")[0]}` : null) : span;
-  const tier = smallCorpus ? null : questionTier(c.exam_count, maxExamCount);
+
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm">
       <div className="flex gap-3">
@@ -272,11 +275,6 @@ function ClusterItem({
           </div>
           <CoverageBar count={c.exam_count} total={totalExams} />
           <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs">
-            {tier && (
-              <span className={`rounded-full px-2 py-0.5 text-[11px] font-semibold ${tier.classes}`}>
-                {tier.label}
-              </span>
-            )}
             <span className="text-[11px] text-slate-500">
               {c.exam_count} exam{c.exam_count === 1 ? "" : "s"}
               {filterNote ? ` in ${filterNote}` : ""}
