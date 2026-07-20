@@ -23,6 +23,12 @@ export interface ClusterResult {
   topic?: string | null;
   /** Present only on TOPIC_ANALYTICS results. */
   topic_similarity?: number;
+  /** >=50% of member questions reference a provided figure. */
+  has_figure?: boolean;
+  /** Near-identical text from many exams, figure-dependent — count caveat. */
+  text_twin?: boolean;
+  figure_share?: number;
+  distinct_texts?: number;
   sources: PaperSource[];
 }
 
@@ -85,6 +91,8 @@ export interface AskResponse {
   filters?: { year?: string | null; exam_type?: string | null };
   /** True when the query asked for a prediction (answer leads with disclaimer). */
   predictive?: boolean;
+  /** Small archive: tiers/percentages suppressed, caveats shown. */
+  small_corpus?: boolean;
   /** YEAR_TREND: per-year distinct-exam counts by topic. */
   trend?: { years: string[]; topics: TrendTopicResult[] };
   /** Total labeled topics for the subject (stat strip). */

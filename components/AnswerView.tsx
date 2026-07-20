@@ -123,15 +123,18 @@ function StatStrip({
   totalExams,
   topicCount,
   topics,
+  smallCorpus = false,
 }: {
   totalExams: number | null;
   topicCount?: number;
   topics: TopicResult[];
+  smallCorpus?: boolean;
 }) {
   if (totalExams == null) return null;
-  const parts: string[] = [`${totalExams} exams`];
+  // Small archives get raw counts only — a percentage of 3 exams is noise.
+  const parts: string[] = [`${totalExams} exam${totalExams === 1 ? "" : "s"}${smallCorpus ? " (small archive)" : ""}`];
   if (topicCount) parts.push(`${topicCount} topics`);
-  if (totalExams > 0 && topics.length > 0) {
+  if (!smallCorpus && totalExams > 0 && topics.length > 0) {
     parts.push(`top topic in ${Math.round((topics[0].exam_count / totalExams) * 100)}% of exams`);
   }
   return (
@@ -226,6 +229,7 @@ export default function AnswerView({ res, msgId }: { res: AskResponse; msgId: nu
               totalExams={res.total_exams ?? null}
               maxExamCount={Math.max(...res.clusters!.map((x) => x.exam_count))}
               filterNote={filterNote}
+              smallCorpus={res.small_corpus === true}
             />
           ))}
         </ol>
@@ -240,16 +244,18 @@ function ClusterItem({
   totalExams,
   maxExamCount = null,
   filterNote = null,
+  smallCorpus = false,
 }: {
   cluster: ClusterResult;
   rank: number;
   totalExams: number | null;
   maxExamCount?: number | null;
   filterNote?: string | null;
+  smallCorpus?: boolean;
 }) {
   const span = yearSpan(c.years_spanned);
   const yearsChip = filterNote ? (span ? `asked since ${span.split("–")[0]}` : null) : span;
-  const tier = questionTier(c.exam_count, maxExamCount);
+  const tier = smallCorpus ? null : questionTier(c.exam_count, maxExamCount);
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm">
       <div className="flex gap-3">
@@ -276,10 +282,16 @@ function ClusterItem({
               {filterNote ? ` in ${filterNote}` : ""}
             </span>
             {yearsChip && <MutedPill>{yearsChip}</MutedPill>}
-            {c.topic_similarity != null && (
+            {c.has_figure && <MutedPill>has figure</MutedPill>}
+            {c.topic_similarity != null && !smallCorpus && (
               <MutedPill>{Math.round(c.topic_similarity * 100)}% match</MutedPill>
             )}
           </div>
+          {c.text_twin && (
+            <p className="mt-1 text-[11px] text-slate-500">
+              Count refers to a figure-based question — the figure may differ between papers.
+            </p>
+          )}
           {c.sources.length > 0 && (
             <details className="mt-2">
               <summary className="flex min-h-11 cursor-pointer select-none items-center text-xs font-medium text-slate-400 hover:text-indigo-400">
@@ -347,7 +359,12 @@ function TopicAnswer({ res }: { res: AskResponse }) {
       <span className="mb-2 inline-block rounded-full bg-indigo-500/15 px-2.5 py-0.5 text-xs font-semibold text-indigo-300">
         {intent === "STUDY_GUIDE" ? "Study plan" : "Topic weightage"}
       </span>
-      <StatStrip totalExams={totalExams} topicCount={res.topic_count} topics={topics} />
+      <StatStrip
+        totalExams={totalExams}
+        topicCount={res.topic_count}
+        topics={topics}
+        smallCorpus={res.small_corpus === true}
+      />
       {dayPlan ? (
         <div data-testid="day-plan">
           {dayPlan.intro && <Prose>{dayPlan.intro}</Prose>}
@@ -372,7 +389,13 @@ function TopicAnswer({ res }: { res: AskResponse }) {
         (intent === "TOPIC_WEIGHTAGE" ? (
           <ol className="mt-3 space-y-3.5">
             {topics.map((t, i) => (
-              <TopicItem key={t.topic} topic={t} rank={i + 1} totalExams={totalExams} />
+              <TopicItem
+                key={t.topic}
+                topic={t}
+                rank={i + 1}
+                totalExams={totalExams}
+                smallCorpus={res.small_corpus === true}
+              />
             ))}
           </ol>
         ) : (
@@ -382,7 +405,13 @@ function TopicAnswer({ res }: { res: AskResponse }) {
             </summary>
             <ol className="mt-2 space-y-3">
               {topics.map((t, i) => (
-                <TopicItem key={t.topic} topic={t} rank={i + 1} totalExams={totalExams} />
+                <TopicItem
+                  key={t.topic}
+                  topic={t}
+                  rank={i + 1}
+                  totalExams={totalExams}
+                  smallCorpus={res.small_corpus === true}
+                />
               ))}
             </ol>
           </details>
@@ -395,10 +424,12 @@ function TopicItem({
   topic: t,
   rank,
   totalExams,
+  smallCorpus = false,
 }: {
   topic: TopicResult;
   rank: number;
   totalExams: number | null;
+  smallCorpus?: boolean;
 }) {
   const span =
     t.years.length === 0
@@ -406,7 +437,7 @@ function TopicItem({
       : t.years.length === 1
         ? t.years[0]
         : `${t.years[0]}–${t.years[t.years.length - 1]}`;
-  const tier = priorityTier(t.exam_count, totalExams);
+  const tier = smallCorpus ? null : priorityTier(t.exam_count, totalExams);
   return (
     <li className="rounded-xl border border-slate-800 bg-slate-900 p-3.5 shadow-sm">
       <div className="flex items-start gap-3">
