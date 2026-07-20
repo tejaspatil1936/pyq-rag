@@ -44,6 +44,7 @@ import {
   type HistoryTurn,
 } from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
+import { checkResponseInvariants } from "@/lib/invariants";
 import { logEvent } from "@/lib/obs";
 import { skipContractViolation } from "@/lib/quality";
 import { getSubjectStats, isSmallCorpus } from "@/lib/subject-stats";
@@ -155,8 +156,20 @@ export async function POST(req: Request) {
     }
   }
 
+  // Final invariant gate (see CLAUDE.md): violations are logged loudly —
+  // deterministic-path hits are bugs to fix at the source.
+  let statsForInvariants: import("@/lib/subject-stats").SubjectStats | null = null;
+  let filtersActiveForInvariants = false;
+
   // Successful history-free responses land in the cache on the way out.
   const respond = (body: Record<string, unknown>, cacheable = true) => {
+    const violations = checkResponseInvariants(body, {
+      stats: statsForInvariants,
+      filtersActive: filtersActiveForInvariants,
+    });
+    if (violations.length > 0) {
+      logEvent({ evt: "invariant_violation", subject, intent: body.intent, violations });
+    }
     if (cacheable && history.length === 0) cacheSet(key, body);
     logAsk({
       status: 200,
@@ -176,6 +189,7 @@ export async function POST(req: Request) {
 
     // Corpus-health stats drive adaptive honesty (null until audited).
     const subjectStats = await getSubjectStats(subject);
+    statsForInvariants = subjectStats;
 
     // A bare "hi"/"?" is someone knocking, not abuse — nudge, don't refuse.
     if (isGreeting(question)) {
@@ -199,6 +213,7 @@ export async function POST(req: Request) {
       coerceClassification(rawCls, question);
     const filters = { year, examType };
     const note = filterLabel(filters);
+    filtersActiveForInvariants = note != null;
 
     // "Predict the paper" phrasings: lead with the disclaimer, then honest
     // frequency data — never Gemini-written fortune telling.
@@ -334,7 +349,7 @@ export async function POST(req: Request) {
         return respond({
           intent,
           subject,
-          answer: formatTopicWeightageAnswer(subject, topics, total) + (smallW ? smallNote : ""),
+          answer: formatTopicWeightageAnswer(subject, topics, total, stats.topic_count) + (smallW ? smallNote : ""),
           topics: topicsPayload,
           total_exams: total,
           topic_count: stats.topic_count,
@@ -537,7 +552,7 @@ export async function POST(req: Request) {
           return respond({
             intent: "TOPIC_WEIGHTAGE",
             subject,
-            answer: formatTopicWeightageAnswer(subject, wTopics, wTotal),
+            answer: formatTopicWeightageAnswer(subject, wTopics, wTotal, wStats.topic_count),
             topics: wTopics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
             total_exams: wTotal,
             topic_count: wStats.topic_count,

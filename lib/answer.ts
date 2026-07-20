@@ -125,6 +125,7 @@ export function formatTopicWeightageAnswer(
   subject: string,
   topics: TopicRow[],
   totalExams: number,
+  topicCount: number | null = null,
 ): string {
   const [first, second, third] = topics;
   const parts: string[] = [];
@@ -138,7 +139,12 @@ export function formatTopicWeightageAnswer(
   } else if (second) {
     parts.push(`**${second.topic}** (${second.exam_count}) comes next.`);
   }
-  parts.push(`Full ranking below — tap a topic to see its questions.`);
+  // Scope fidelity: a capped ranking states how much exists beyond it.
+  parts.push(
+    topicCount != null && topicCount > topics.length
+      ? `Top ${topics.length} of ${topicCount} topics below — tap one for its questions.`
+      : `Full ranking below — tap a topic to see its questions.`,
+  );
   return parts.join(" ");
 }
 
