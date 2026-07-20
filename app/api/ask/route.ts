@@ -21,9 +21,15 @@ import {
   stripInternalNames,
   synthesizeAnswer,
   synthesizeStudyGuide,
+  synthesizeWithQuality,
 } from "@/lib/answer";
 import { cacheGet, cacheKey, cacheSet } from "@/lib/cache";
-import { MIN_GROUNDING_HITS, SEMANTIC_MIN_SIMILARITY } from "@/lib/config";
+import {
+  MIN_GROUNDING_HITS,
+  PROSE_WORDS_EXPLAIN,
+  PROSE_WORDS_STRATEGY,
+  SEMANTIC_MIN_SIMILARITY,
+} from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import { classifyIntent, coerceClassification, isSkipQuery, type HistoryTurn } from "@/lib/intent";
@@ -300,7 +306,11 @@ export async function POST(req: Request) {
       }
       let plan: string;
       try {
-        plan = await synthesizeStudyGuide(subject, question, topics, total, topN, history, tail);
+        plan = await synthesizeWithQuality(
+          (fix) => synthesizeStudyGuide(subject, question, topics, total, topN, history, tail, fix),
+          PROSE_WORDS_STRATEGY,
+          { subject, question },
+        );
       } catch (err) {
         if (err instanceof GeminiUnavailable) {
           return respond(
@@ -453,7 +463,11 @@ export async function POST(req: Request) {
 
     let raw: string;
     try {
-      raw = await synthesizeAnswer(subject, question, grounded, history);
+      raw = await synthesizeWithQuality(
+        (fix) => synthesizeAnswer(subject, question, grounded, history, fix),
+        PROSE_WORDS_EXPLAIN,
+        { subject, question },
+      );
     } catch (err) {
       if (err instanceof GeminiUnavailable) {
         // Quota exhausted: never go dark — hand over raw retrieval instead.
