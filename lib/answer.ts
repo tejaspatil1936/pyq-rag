@@ -43,15 +43,26 @@ export function formatTopicAnalyticsAnswer(
   topic: string,
   clusters: ClusterRow[],
   sources: Map<number, PaperSource[]>,
-  stats: { topicExamCount: number; totalExams: number; filterNote?: string | null },
+  stats: {
+    topicExamCount: number;
+    totalExams: number;
+    clusterTotal?: number;
+    exhaustive?: boolean;
+    filterNote?: string | null;
+  },
 ): string {
-  const lead = `**${topic}** appeared in **${stats.topicExamCount}** of ${stats.totalExams} ${subject} exams${stats.filterNote ? ` (${stats.filterNote} only)` : ""}.`;
-  return `${lead}\n\n${formatClusterList(
-    `The ${clusters.length} matching question group${clusters.length === 1 ? "" : "s"}, ranked by how often they were asked:`,
-    clusters,
-    sources,
-    stats.filterNote ?? null,
-  )}`;
+  const total = stats.clusterTotal ?? clusters.length;
+  // Count-noun accuracy: exams and distinct questions are different things —
+  // report both, always.
+  const lead = `**${topic}** appeared in **${stats.topicExamCount}** of ${stats.totalExams} ${subject} exams, across **${total}** distinct question${total === 1 ? "" : "s"}${stats.filterNote ? ` (${stats.filterNote} only)` : ""}.`;
+  const heading = stats.exhaustive
+    ? `All ${total} distinct question group${total === 1 ? "" : "s"}, ranked by how often they were asked:`
+    : `The top matching question group${clusters.length === 1 ? "" : "s"}, ranked by how often they were asked:`;
+  let out = `${lead}\n\n${formatClusterList(heading, clusters, sources, stats.filterNote ?? null)}`;
+  if (!stats.exhaustive && total > clusters.length) {
+    out += `\n\nShowing top ${clusters.length} of ${total} distinct questions — ask for "all questions" to see the rest.`;
+  }
+  return out;
 }
 
 function formatClusterList(

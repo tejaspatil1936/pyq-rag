@@ -42,13 +42,6 @@ export const PROSE_WORDS_EXPLAIN = 200;
 export const PRIORITY_MUST_RATIO = 0.35;
 export const PRIORITY_SHOULD_RATIO = 0.15;
 
-/**
- * Question-row tiers use a different scale: individual questions repeat far
- * less than whole topics, so tiers are relative to the LIST's top count —
- * the #1 most-repeated question is always "Must know" (ratio 1.0).
- */
-export const QUESTION_MUST_RATIO = 0.66;
-export const QUESTION_SHOULD_RATIO = 0.33;
 
 /** Below these, tiers/percentages are suppressed and answers carry a
  *  small-archive caveat — 2-of-3-exams is indicative, not a trend. */
@@ -60,3 +53,7 @@ export const TREND_MIN_YEARS = 3;
 
 /** Audit pct_figure at/above this adds the figure-methodology note. */
 export const FIGURE_HEAVY_SHARE = 0.25;
+
+/** Upper bound on clusters fetched for a topic query — the exhaustive
+ *  ("all questions") ceiling and the denominator for "top 10 of N". */
+export const MAX_TOPIC_CLUSTERS = 150;

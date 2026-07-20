@@ -141,6 +141,13 @@ export function isSkipQuery(question: string): boolean {
   return SKIP_RE.test(question);
 }
 
+/** "all questions / every question / complete list" — return the full set. */
+export function isExhaustiveQuery(question: string): boolean {
+  return /\b(?:all|every)\s+(?:the\s+)?questions?\b|complete\s+list|full\s+list|\blist\s+all\b|\bshow\s+all\b/i.test(
+    question,
+  );
+}
+
 // "how many times / how often" phrasings must always land on the
 // TOPIC_ANALYTICS path. Typo-tolerant: "ow many times" (dropped h) and
 // "how many time" (dropped s) still count.

@@ -85,6 +85,10 @@ export interface AskResponse {
   total_exams?: number;
   /** TOPIC_ANALYTICS: distinct exams the topic appeared in. */
   topic_exam_count?: number;
+  /** TOPIC_ANALYTICS: total distinct question groups for the topic. */
+  cluster_total?: number;
+  /** True when the query asked for the complete list. */
+  exhaustive?: boolean;
   /** STUDY_GUIDE: the rarely-asked tail — the only honest skip candidates. */
   skip_candidates?: { topic: string; exam_count: number }[];
   /** Active year/exam-type narrowing, echoed back when set. */

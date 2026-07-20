@@ -28,6 +28,7 @@ import {
 import { cacheGet, cacheKey, cacheSet } from "@/lib/cache";
 import {
   FIGURE_HEAVY_SHARE,
+  MAX_TOPIC_CLUSTERS,
   MIN_GROUNDING_HITS,
   PROSE_WORDS_EXPLAIN,
   PROSE_WORDS_STRATEGY,
@@ -35,7 +36,13 @@ import {
 } from "@/lib/config";
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
-import { classifyIntent, coerceClassification, isSkipQuery, type HistoryTurn } from "@/lib/intent";
+import {
+  classifyIntent,
+  coerceClassification,
+  isExhaustiveQuery,
+  isSkipQuery,
+  type HistoryTurn,
+} from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
 import { logEvent } from "@/lib/obs";
 import { skipContractViolation } from "@/lib/quality";
@@ -420,9 +427,13 @@ export async function POST(req: Request) {
       const rawPhrase = topic ?? question;
       const label = await matchTopicLabel(subject, rawPhrase);
       const topicPhrase = label ?? rawPhrase;
-      const clusters = label
-        ? await labelClusters(subject, label, TOP_K, filters)
-        : await topicClusters(subject, await embedQuery(rawPhrase), TOP_K, filters);
+      const exhaustive = isExhaustiveQuery(question);
+      // Always fetch the full set (bounded): the total is needed for the
+      // "top 10 of N" statement and the exam count either way.
+      const allClusters = label
+        ? await labelClusters(subject, label, MAX_TOPIC_CLUSTERS, filters)
+        : await topicClusters(subject, await embedQuery(rawPhrase), MAX_TOPIC_CLUSTERS, filters);
+      const clusters = exhaustive ? allClusters : allClusters.slice(0, TOP_K);
       if (clusters.length === 0) {
         // The total leads UNCONDITIONALLY — a zero-match topic query still
         // opens with "appeared in 0 of M exams".
@@ -450,11 +461,12 @@ export async function POST(req: Request) {
         });
       }
       const ids = clusters.map((c) => c.cluster_id);
+      const allIds = allClusters.map((c) => c.cluster_id);
       const [sources, topicExamCount, total] = await Promise.all([
         clusterSources(ids),
-        // Label matches aggregate over ALL the label's clusters (not just
-        // the top-K shown) — the exact figure the weightage table reports.
-        label ? labelExamCount(subject, label, filters) : examCountForClusters(ids, filters),
+        // Exam totals always aggregate over the FULL matched set, never
+        // just the rows shown.
+        label ? labelExamCount(subject, label, filters) : examCountForClusters(allIds, filters),
         totalExams(subject, filters), // denominator matches the active filter
       ]);
       const annotated = clusters.map(annotateCluster);
@@ -462,6 +474,8 @@ export async function POST(req: Request) {
       let answer = formatTopicAnalyticsAnswer(subject, topicPhrase, annotated, sources, {
         topicExamCount,
         totalExams: total,
+        clusterTotal: allClusters.length,
+        exhaustive,
         filterNote: note,
       });
       if (small) {
@@ -473,6 +487,8 @@ export async function POST(req: Request) {
         answer,
         topic_exam_count: topicExamCount,
         total_exams: total,
+        cluster_total: allClusters.length,
+        ...(exhaustive ? { exhaustive: true } : {}),
         clusters: annotated.map((c) => ({ ...c, sources: sources.get(c.cluster_id) ?? [] })),
         ...(small ? { small_corpus: true } : {}),
         ...(note ? { filters: { year, exam_type: examType } } : {}),
