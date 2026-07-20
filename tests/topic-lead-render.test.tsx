@@ -2,7 +2,7 @@ import { renderToStaticMarkup } from "react-dom/server";
 import { describe, expect, it } from "vitest";
 
 import AnswerView from "../components/AnswerView";
-import type { AskResponse, ClusterResult } from "../lib/api-types";
+import type { AskResponse, ClusterResult, TopicResult } from "../lib/api-types";
 
 const cluster = (id: number, text: string): ClusterResult => ({
   cluster_id: id,
@@ -18,6 +18,50 @@ const render = (res: AskResponse) => renderToStaticMarkup(<AnswerView res={res} 
 
 // Regression: the API answer led with the total, but the nonzero-cluster
 // path rendered only the structured list — the lead never reached the user.
+describe("scope-true labels", () => {
+  it("weightage expander header shows the REAL cluster count, not the preview slice", () => {
+    const topic: TopicResult = {
+      topic: "Doubly Linked List Operations",
+      exam_count: 30,
+      total_marks: 322,
+      cluster_count: 25, // DB truth
+      years: ["2017", "2024"],
+      questions: [
+        { text: "q1", exam_count: 7 },
+        { text: "q2", exam_count: 5 },
+        { text: "q3", exam_count: 4 },
+        { text: "q4", exam_count: 2 }, // 4-item preview
+      ],
+    };
+    const html = render({
+      intent: "TOPIC_WEIGHTAGE",
+      subject: "Data Structures",
+      answer: "**Verdict.**",
+      topics: [topic],
+      total_exams: 49,
+    });
+    expect(html).toContain("Questions (25)");
+    expect(html).not.toContain("Questions (4)");
+    expect(html).toContain("Preview of 4 shown.");
+  });
+
+  it("cluster sources header shows the true total with a preview note", () => {
+    const html = render({
+      intent: "ANALYTICS",
+      answer: "**x**",
+      total_exams: 49,
+      clusters: [
+        {
+          ...cluster(1, "Define hash function."),
+          source_total: 9,
+        },
+      ],
+    });
+    expect(html).toContain("Sources (9)");
+    expect(html).toContain("Showing the 1 most recent of 9 papers.");
+  });
+});
+
 describe("TOPIC_ANALYTICS total lead rendering", () => {
   it("renders the lead FIRST when clusters are nonempty", () => {
     const html = render({

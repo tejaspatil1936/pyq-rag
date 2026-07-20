@@ -585,6 +585,34 @@ describe(`POST /api/ask @ ${BASE}`, () => {
     expect(body.answer).toMatch(/^\*\*.+\*\* appeared in \*\*\d+\*\* of \d+/);
   });
 
+  it("GET /api/topic-questions returns the complete count-ordered list", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const res = await fetch(
+      `${BASE}/api/topic-questions?subject=${encodeURIComponent(subject)}&topic=${encodeURIComponent("Doubly Linked List Operations")}`,
+    );
+    expect(res.status).toBe(200);
+    const body = (await res.json()) as {
+      cluster_total: number;
+      questions: { text: string; exam_count: number }[];
+    };
+    expect(body.cluster_total).toBeGreaterThan(10);
+    expect(body.questions.length).toBe(body.cluster_total); // complete, not a slice
+    for (let i = 1; i < body.questions.length; i++) {
+      expect(body.questions[i].exam_count).toBeLessThanOrEqual(body.questions[i - 1].exam_count);
+    }
+  });
+
+  it("weightage previews carry the true cluster_count", async () => {
+    const subject = findSubject(/^data structures$/i);
+    const { status, body } = await ask({ subject, question: "most important topics" });
+    expect(status).toBe(200);
+    const rows = (body.topics ?? []) as { cluster_count?: number; questions: { text: string }[] }[];
+    expect(rows.length).toBeGreaterThan(0);
+    for (const t of rows) {
+      expect(t.cluster_count ?? 0).toBeGreaterThanOrEqual(t.questions.length);
+    }
+  });
+
   it("GET /api/health reports DB and key status", async () => {
     const res = await fetch(`${BASE}/api/health`);
     expect(res.status).toBe(200);

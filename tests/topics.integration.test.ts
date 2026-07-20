@@ -1,6 +1,6 @@
 import { afterAll, describe, expect, it } from "vitest";
 
-import { closePool } from "../lib/db";
+import { closePool, getPool } from "../lib/db";
 import { topicQuestions, topicWeightage, totalExams } from "../lib/topics";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
