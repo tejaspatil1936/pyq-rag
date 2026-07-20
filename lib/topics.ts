@@ -58,6 +58,112 @@ export async function topicWeightage(subject: string, limit = 10): Promise<Topic
   }));
 }
 
+const TOPIC_STOPWORDS = new Set([
+  "the", "a", "an", "of", "and", "or", "in", "on", "for", "to", "with", "using", "its",
+]);
+
+/** Lowercase, de-pluralized, stopword-free tokens for fuzzy label matching. */
+export function topicTokens(s: string): string[] {
+  return s
+    .toLowerCase()
+    .split(/[^a-z0-9]+/)
+    .filter(Boolean)
+    .map((t) => (t.length > 3 && t.endsWith("s") ? t.slice(0, -1) : t))
+    .filter((t) => !TOPIC_STOPWORDS.has(t));
+}
+
+/**
+ * Match a query's topic phrase against the subject's canonical labels.
+ * A label matches when one token set contains the other ("doubly linked
+ * list" ⊆ "Doubly Linked List Operations"). Ambiguity — several labels
+ * matching equally well ("linked list" fits doubly AND circular) — returns
+ * null so the embedding search can aggregate across all of them instead.
+ */
+export async function matchTopicLabel(subject: string, phrase: string): Promise<string | null> {
+  const pt = topicTokens(phrase);
+  if (pt.length === 0) return null;
+  const ptSet = new Set(pt);
+
+  const res = await getPool().query(
+    "SELECT DISTINCT topic FROM clusters WHERE standard_subject = $1 AND topic IS NOT NULL",
+    [subject],
+  );
+  const labels = (res.rows as { topic: string }[]).map((r) => r.topic);
+
+  let best: { label: string; score: number } | null = null;
+  let tied = false;
+  for (const label of labels) {
+    const lt = topicTokens(label);
+    if (lt.length === 0) continue;
+    const ltSet = new Set(lt);
+    const phraseCovered = pt.every((t) => ltSet.has(t));
+    const labelCovered = lt.every((t) => ptSet.has(t));
+    if (!phraseCovered && !labelCovered) continue;
+    const common = pt.filter((t) => ltSet.has(t)).length;
+    // Coverage score with a slight penalty for extra label tokens, so an
+    // exact label beats a superset label when both fully cover the phrase.
+    const score = common / Math.max(pt.length, 1) - 0.01 * Math.abs(lt.length - pt.length);
+    if (best === null || score > best.score) {
+      best = { label, score };
+      tied = false;
+    } else if (Math.abs(score - best.score) < 1e-9) {
+      tied = true;
+    }
+  }
+  return best !== null && !tied ? best.label : null;
+}
+
+/** Distinct exams the LABEL's questions appeared in — identical aggregation
+ *  to topicWeightage, so the figures always agree. */
+export async function labelExamCount(
+  subject: string,
+  label: string,
+  filters: ExamFilters = {},
+): Promise<number> {
+  const res = await getPool().query(
+    `SELECT COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS n
+       FROM clusters c
+       JOIN questions q ON q.cluster_id = c.id
+       JOIN papers p ON p.id = q.paper_id
+      WHERE c.standard_subject = $1 AND c.topic = $2${FILTER_SQL("$3", "$4")}`,
+    [subject, label, filters.year ?? null, filters.examType ?? null],
+  );
+  return res.rows[0].n as number;
+}
+
+/** The label's clusters, ranked like every other frequency list. */
+export async function labelClusters(
+  subject: string,
+  label: string,
+  limit = 10,
+  filters: ExamFilters = {},
+): Promise<
+  {
+    cluster_id: number;
+    representative_text: string;
+    question_count: number;
+    exam_count: number;
+    years_spanned: string | null;
+  }[]
+> {
+  const res = await getPool().query(
+    `SELECT c.id AS cluster_id,
+            c.representative_text,
+            c.question_count::int AS question_count,
+            COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
+            c.years_spanned
+       FROM clusters c
+       JOIN questions q ON q.cluster_id = c.id
+       JOIN papers p ON p.id = q.paper_id
+      WHERE c.standard_subject = $1 AND c.topic = $2${FILTER_SQL("$4", "$5")}
+      GROUP BY c.id, c.representative_text, c.question_count, c.years_spanned
+      ORDER BY exam_count DESC, c.question_count DESC, c.id
+      LIMIT $3`,
+    [subject, label, limit, filters.year ?? null, filters.examType ?? null],
+  );
+  return res.rows;
+}
+
 /**
  * The 1–3-exam tail of the FULL topic distribution — the only honest "you
  * can skip this" candidates. Recommendations must never come from the

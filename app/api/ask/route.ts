@@ -33,7 +33,15 @@ import { consume, ipFromHeaders, rateKey, synthLimit, totalLimit } from "@/lib/r
 import { greetingMessage, isGreeting, prefilterAbuse, refusalMessage } from "@/lib/scope";
 import { semanticSearch } from "@/lib/search";
 import { subjectExists } from "@/lib/subjects";
-import { topicQuestions, topicTail, topicWeightage, totalExams } from "@/lib/topics";
+import {
+  labelClusters,
+  labelExamCount,
+  matchTopicLabel,
+  topicQuestions,
+  topicTail,
+  topicWeightage,
+  totalExams,
+} from "@/lib/topics";
 import { yearTrend } from "@/lib/trends";
 
 export const runtime = "nodejs";
@@ -326,11 +334,16 @@ export async function POST(req: Request) {
     }
 
     if (intent === "TOPIC_ANALYTICS") {
-      // Topic-scoped frequency: embed the topic phrase, match this subject's
-      // clusters by centroid similarity, rank by real exam counts.
-      const topicPhrase = topic ?? question;
-      const topicVec = await embedQuery(topicPhrase);
-      const clusters = await topicClusters(subject, topicVec, TOP_K, filters);
+      // Label-first: when the phrase matches a canonical topic label, answer
+      // from exactly that label's clusters so the count agrees with the
+      // weightage table. Embedding search stays the fallback for phrases
+      // that don't map to a label (or map ambiguously).
+      const rawPhrase = topic ?? question;
+      const label = await matchTopicLabel(subject, rawPhrase);
+      const topicPhrase = label ?? rawPhrase;
+      const clusters = label
+        ? await labelClusters(subject, label, TOP_K, filters)
+        : await topicClusters(subject, await embedQuery(rawPhrase), TOP_K, filters);
       if (clusters.length === 0) {
         // The total leads UNCONDITIONALLY — a zero-match topic query still
         // opens with "appeared in 0 of M exams".
@@ -360,7 +373,9 @@ export async function POST(req: Request) {
       const ids = clusters.map((c) => c.cluster_id);
       const [sources, topicExamCount, total] = await Promise.all([
         clusterSources(ids),
-        examCountForClusters(ids, filters),
+        // Label matches aggregate over ALL the label's clusters (not just
+        // the top-K shown) — the exact figure the weightage table reports.
+        label ? labelExamCount(subject, label, filters) : examCountForClusters(ids, filters),
         totalExams(subject, filters), // denominator matches the active filter
       ]);
       return respond({
