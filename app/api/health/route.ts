@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 
 import { getPool } from "@/lib/db";
 import { GEMINI_MODEL } from "@/lib/gemini";
+import { keyAvailability } from "@/lib/key-rotator";
 
 export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
@@ -17,15 +18,18 @@ export async function GET() {
     console.error("health: DB check failed:", err);
   }
 
-  const keyCount = (process.env.GEMINI_API_KEYS ?? "")
-    .split(",")
-    .map((k) => k.trim())
-    .filter(Boolean).length;
+  const { total, available, benched } = keyAvailability();
 
   const body = {
-    ok: db.ok && keyCount > 0,
+    ok: db.ok && total > 0,
     db,
-    gemini: { configured: keyCount > 0, keys: keyCount, model: GEMINI_MODEL },
+    gemini: {
+      configured: total > 0,
+      keys: total,
+      available,
+      benched,
+      model: GEMINI_MODEL,
+    },
   };
   return NextResponse.json(body, { status: body.ok ? 200 : 503 });
 }
