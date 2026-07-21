@@ -1,7 +1,14 @@
 import { afterAll, describe, expect, it } from "vitest";
 
+import { MAX_TOPIC_CLUSTERS } from "../lib/config";
 import { closePool, getPool } from "../lib/db";
-import { topicQuestions, topicWeightage, totalExams } from "../lib/topics";
+import {
+  labelClusters,
+  matchTopicLabel,
+  topicQuestions,
+  topicWeightage,
+  totalExams,
+} from "../lib/topics";
 
 const hasDb = Boolean(process.env.DATABASE_URL);
 
@@ -52,5 +59,41 @@ describe.skipIf(!hasDb)("topic weightage (live DB)", () => {
   it("respects a requested size", async () => {
     const topics = await topicWeightage("Data Structures", 5);
     expect(topics.length).toBe(5);
+  });
+
+  // Exhaustive-list contract: the label fetch returns EVERY cluster of the
+  // label (bounded by MAX_TOPIC_CLUSTERS), verified against a direct count —
+  // a reintroduced TOP_K cap would fail this immediately.
+  it("labelClusters returns the label's full cluster set (hashing)", async () => {
+    const label = await matchTopicLabel("Data Structures", "hashing");
+    expect(label).toMatch(/hashing/i);
+    const [rows, direct] = await Promise.all([
+      labelClusters("Data Structures", label!, MAX_TOPIC_CLUSTERS),
+      getPool().query(
+        "SELECT COUNT(*)::int AS n FROM clusters WHERE standard_subject = $1 AND topic = $2",
+        ["Data Structures", label],
+      ),
+    ]);
+    expect(rows.length).toBe(direct.rows[0].n);
+    expect(rows.length).toBeGreaterThan(10); // 15 at time of writing — beyond any TOP_K cap
+  });
+
+  it("weightage filters narrow counts and denominators together", async () => {
+    const [mse, all, mseTotal, allTotal] = await Promise.all([
+      topicWeightage("Data Structures", 10, { examType: "MSE" }),
+      topicWeightage("Data Structures", 10),
+      totalExams("Data Structures", { examType: "MSE" }),
+      totalExams("Data Structures"),
+    ]);
+    expect(mseTotal).toBeGreaterThan(0);
+    expect(mseTotal).toBeLessThan(allTotal);
+    expect(mse.length).toBeGreaterThan(0);
+    for (const t of mse) expect(t.exam_count).toBeLessThanOrEqual(mseTotal);
+    // the MSE-only leader count can never exceed its all-exams count
+    const allByTopic = new Map(all.map((t) => [t.topic, t.exam_count]));
+    for (const t of mse) {
+      const unfiltered = allByTopic.get(t.topic);
+      if (unfiltered != null) expect(t.exam_count).toBeLessThanOrEqual(unfiltered);
+    }
   });
 });
