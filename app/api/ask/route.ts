@@ -42,6 +42,7 @@ import {
   UNRESOLVED_REF,
   classifyIntent,
   coerceClassification,
+  extractTopicShape,
   isExhaustiveQuery,
   isSkipQuery,
   resolveNumberedRef,
@@ -222,9 +223,18 @@ export async function POST(req: Request) {
 
     // Scope gate layer 1 rides along in the intent-classification call; the
     // history lets it resolve follow-ups like "explain the second one".
-    const rawCls = await classifyIntent(question, { subject, history });
+    let rawCls = await classifyIntent(question, { subject, history });
     if (!rawCls.inScope) {
-      return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
+      // Honest-zero contract: an archive-referential ask about an unknown
+      // term ("what gets asked about flurbification") answers with "0 of N
+      // exams" + suggestions, not a refusal. The abuse prefilter already ran.
+      const shape = extractTopicShape(question);
+      if (shape) {
+        logEvent({ evt: "scope_override_topic_shaped", subject, topic: shape });
+        rawCls = { ...rawCls, inScope: true, intent: "TOPIC_ANALYTICS", topic: shape };
+      } else {
+        return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
+      }
     }
     // Deterministic fixes for known classifier drift (skip -> study guide,
     // filter-only -> analytics, count-phrased topic -> topic analytics).

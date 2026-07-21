@@ -141,6 +141,17 @@ export function isSkipQuery(question: string): boolean {
   return SKIP_RE.test(question);
 }
 
+/**
+ * Archive-referential topic phrasing ("what gets asked about X", "how often
+ * is X asked") — extract X. Such queries deserve the honest-zero contract
+ * ("X appeared in 0 of N exams") even when the scope classifier balks at an
+ * unknown term; refusal is reserved for clearly non-academic asks.
+ */
+export function extractTopicShape(question: string): string | null {
+  const m = TOPIC_PATTERN_PASSIVE.exec(question) ?? TOPIC_PATTERN.exec(question);
+  return m?.[1]?.trim() || null;
+}
+
 /** "all questions / every question / complete list" — return the full set. */
 export function isExhaustiveQuery(question: string): boolean {
   return /\b(?:all|every)\s+(?:the\s+)?questions?\b|complete\s+list|full\s+list|\blist\s+all\b|\bshow\s+all\b/i.test(

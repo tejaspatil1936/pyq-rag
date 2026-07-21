@@ -5,6 +5,7 @@ import {
   UNRESOLVED_REF,
   classifyHeuristic,
   coerceClassification,
+  extractTopicShape,
   isExhaustiveQuery,
   isSkipQuery,
   resolveNumberedRef,
@@ -192,6 +193,21 @@ describe("classifyHeuristic", () => {
     "compare mesh and star topologies",
   ])("SEMANTIC: %s", (q) => {
     expect(classifyHeuristic(q).intent).toBe("SEMANTIC");
+  });
+});
+
+describe("extractTopicShape", () => {
+  it("extracts the topic from archive-referential phrasings", () => {
+    expect(extractTopicShape("what usually gets asked about flurbification theory")).toMatch(
+      /flurbification theory/i,
+    );
+    expect(extractTopicShape("how often is quantum blockchain asked")).toMatch(/quantum blockchain/i);
+    expect(extractTopicShape("questions on time travel")).toMatch(/time travel/i);
+  });
+
+  it("returns null for non-referential asks (refusal stays possible)", () => {
+    expect(extractTopicShape("write me a poem")).toBeNull();
+    expect(extractTopicShape("what's the weather like")).toBeNull();
   });
 });
 
