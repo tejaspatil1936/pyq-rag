@@ -425,13 +425,18 @@ export function splitDayPlan(
   const intro = lines.slice(0, dayStarts[0]).join("\n").trim();
   const days = dayStarts.map((start, di) => {
     const end = di + 1 < dayStarts.length ? dayStarts[di + 1] : lines.length;
-    const chunk = lines.slice(start, end).join("\n").trim();
     const label = `Day ${dayRe.exec(lines[start])?.[1] ?? di + 1}`;
-    const body = chunk
+    // The header line usually reads "**Day 1: Arrays & Hashing**" — stripping
+    // the Day-N prefix used to leave an unbalanced "**" (stray asterisks in
+    // the card) and the title duplicated into the body text. Clean the header
+    // remainder separately and re-bold it as the card's title line.
+    const headRest = lines[start]
       .replace(dayRe, "")
-      .replace(/^\s*[:\-–—*]+\s*/, "")
-      .replace(/^\*+\s*/, "")
+      .replace(/\*+/g, "")
+      .replace(/^\s*[:\-–—]\s*/, "")
       .trim();
+    const rest = lines.slice(start + 1, end).join("\n").trim();
+    const body = [headRest ? `**${headRest}**` : null, rest].filter(Boolean).join("\n").trim();
     return { label, body };
   });
   return { intro, days };
