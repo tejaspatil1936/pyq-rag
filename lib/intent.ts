@@ -208,9 +208,12 @@ export function coerceClassification(cls: Classification, question: string): Cla
     }
   }
   // A solve request is a content request, never a frequency list — "solve
-  // question 2 step by step" must reach retrieval + synthesis.
-  if (cls.solving && intent !== "SEMANTIC") intent = "SEMANTIC";
-  return { ...cls, intent, topic };
+  // question 2 step by step" must reach retrieval + synthesis. Detected
+  // deterministically (live classifiers drop the solving flag), except when
+  // count phrasing makes it a frequency ask about a solve-style question.
+  const solving = cls.solving || SOLVING_RE.test(question);
+  if (solving && !COUNT_RE.test(question) && intent !== "SEMANTIC") intent = "SEMANTIC";
+  return { ...cls, intent, topic, solving };
 }
 
 /** The whole query is a bare reference ("explain this", "what about that?",

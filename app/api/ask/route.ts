@@ -603,15 +603,18 @@ export async function POST(req: Request) {
     // subject in SQL — the LLM only ever sees same-subject questions. The
     // classifier's standalone rewrite makes follow-ups searchable.
     let searchQuery = rewritten ?? question;
-    // "solve question 2": if the rewrite left the numbered reference
-    // unresolved, resolve it against the last numbered list in the history —
-    // and when there's nothing to resolve against, ask rather than guess.
-    const numRef = NUMBERED_REF.exec(searchQuery);
+    // "solve question 2": resolve the numbered reference against the last
+    // numbered list in the history — and when there's nothing to resolve
+    // against, ask rather than guess. The original question is checked too:
+    // with no history, any "resolution" the rewrite produced is fabrication
+    // (live Gemini paraphrases "question 2" into "the second question").
+    const numRef = NUMBERED_REF.exec(searchQuery) ?? NUMBERED_REF.exec(question);
     if (numRef) {
-      const resolved = resolveNumberedRef(history, Number(numRef[1]));
+      const resolved = history.length > 0 ? resolveNumberedRef(history, Number(numRef[1])) : null;
       if (resolved) {
         searchQuery = resolved;
-      } else {
+      } else if (history.length === 0 || NUMBERED_REF.test(searchQuery)) {
+        // No context at all, or context that didn't resolve it — ask.
         return respond(
           {
             intent: "SEMANTIC",
@@ -622,6 +625,8 @@ export async function POST(req: Request) {
           false,
         );
       }
+      // else: history exists and the classifier's rewrite already resolved
+      // the reference into real content — proceed with it.
     }
     const queryVec = await embedQuery(searchQuery);
     const hits = await semanticSearch(subject, queryVec, TOP_K);

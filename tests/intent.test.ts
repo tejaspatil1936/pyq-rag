@@ -218,6 +218,14 @@ describe("solve-intent routing and numbered references", () => {
     expect(coerceClassification(cls({ intent: "TOPIC_WEIGHTAGE", solving: true }), q).intent).toBe(
       "SEMANTIC",
     );
+    // the classifier dropping the solving flag must not matter
+    const dropped = coerceClassification(cls({ intent: "STUDY_GUIDE", solving: false }), q);
+    expect(dropped.intent).toBe("SEMANTIC");
+    expect(dropped.solving).toBe(true);
+    // count phrasing about a solve-style question stays a frequency ask
+    expect(
+      coerceClassification(cls({ intent: "TOPIC_ANALYTICS", topic: "recurrence" }), "how many times was solve the recurrence asked").intent,
+    ).toBe("TOPIC_ANALYTICS");
   });
 
   it("NUMBERED_REF matches question/q/problem N but never 4-digit years", () => {
