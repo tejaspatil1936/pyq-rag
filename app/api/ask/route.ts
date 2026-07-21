@@ -6,6 +6,7 @@ import {
   clusterSources,
   examCountForClusters,
   filterLabel,
+  nearestYear,
   topClusters,
   topicClusters,
 } from "@/lib/analytics";
@@ -218,16 +219,24 @@ export async function POST(req: Request) {
     // "Predict the paper" phrasings: lead with the disclaimer, then honest
     // frequency data — never Gemini-written fortune telling.
     if (predictive) {
-      const [topics, total] = await Promise.all([topicWeightage(subject, 10), totalExams(subject)]);
+      const [topics, total, pStats] = await Promise.all([
+        topicWeightage(subject, 10, filters),
+        totalExams(subject, filters),
+        topicStats(subject, filters),
+      ]);
       if (topics.length > 0) {
-        const questions = await topicQuestions(subject, topics.map((t) => t.topic));
+        const questions = await topicQuestions(subject, topics.map((t) => t.topic), 4, filters);
         return respond({
           intent: "TOPIC_WEIGHTAGE",
           subject,
           predictive: true,
-          answer: PREDICTION_DISCLAIMER + formatTopicWeightageAnswer(subject, topics, total),
+          answer:
+            PREDICTION_DISCLAIMER +
+            formatTopicWeightageAnswer(subject, topics, total, pStats.topic_count, note),
           topics: topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
           total_exams: total,
+          topic_count: pStats.topic_count,
+          ...(note ? { filters: { year, exam_type: examType } } : {}),
         });
       }
       const clusters = await topClusters(subject, TOP_K);
@@ -308,59 +317,87 @@ export async function POST(req: Request) {
         }),
         });
       }
+      // A year/exam-type filter can't meaningfully narrow a cross-year
+      // trend — keep all years, but say so and echo the filter honestly.
       return respond({
         intent,
-        answer: formatYearTrendAnswer(subject, trend),
+        answer:
+          formatYearTrendAnswer(subject, trend) +
+          (note
+            ? `\n\n*Note: the ${note} filter doesn't apply to a year-wise trend — showing all years.*`
+            : ""),
         trend: { years: trend.years, topics: trend.topics },
+        ...(note ? { filters: { year, exam_type: examType } } : {}),
       });
     }
 
     if (intent === "TOPIC_WEIGHTAGE" || intent === "STUDY_GUIDE") {
       const limit = topN ?? (intent === "STUDY_GUIDE" ? 8 : 10);
+      // Filters propagate here exactly like the analytics paths: "which
+      // topics to focus in MSE" ranks by MSE-only counts over an MSE-only
+      // denominator.
       const [topics, total, stats] = await Promise.all([
-        topicWeightage(subject, limit),
-        totalExams(subject),
-        topicStats(subject),
+        topicWeightage(subject, limit, filters),
+        totalExams(subject, filters),
+        topicStats(subject, filters),
       ]);
 
       if (topics.length === 0) {
+        // With a filter active and zero matching exams, the filter excluded
+        // everything — say so honestly instead of "not labeled".
+        if (note && total === 0) {
+          const years = await availableYears(subject);
+          const near = year ? nearestYear(years, year) : null;
+          return respond({
+            intent,
+            subject,
+            answer: `The archive has no **${subject}** ${note} papers, so there's no ${note} weightage to rank.${near ? ` Nearest year on file: ${near}.` : ""}${years.length > 0 ? ` Years available: ${years.join(", ")}.` : ""}`,
+            topics: [],
+            total_exams: 0,
+            filters: { year, exam_type: examType },
+          });
+        }
         // Subject not labeled yet: fall back to the analytics ranking rather
         // than a dead end (the cron labels new subjects over time).
-        const clusters = await topClusters(subject, TOP_K);
+        const clusters = await topClusters(subject, TOP_K, filters);
         const sources = await clusterSources(clusters.map((c) => c.cluster_id));
         return respond({
           intent: "ANALYTICS",
           answer:
             `Topics aren't labeled for **${subject}** yet — here are the most repeated questions instead.\n\n` +
-            (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources) : ""),
+            (clusters.length > 0 ? formatAnalyticsAnswer(subject, clusters, sources, note) : ""),
           clusters: clusters.map((c) => {
           const src = sources.get(c.cluster_id);
           return { ...c, sources: src?.list ?? [], source_total: src?.total ?? 0 };
         }),
+          ...(note ? { filters: { year, exam_type: examType } } : {}),
         });
       }
 
-      const questions = await topicQuestions(subject, topics.map((t) => t.topic));
+      const questions = await topicQuestions(subject, topics.map((t) => t.topic), 4, filters);
       const topicsPayload = topics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] }));
 
       const smallW = isSmallCorpus(subjectStats, total);
-      const smallNote = `\n\n*Small archive: only ${total} exam${total === 1 ? "" : "s"} on file — treat rankings as indicative.*`;
+      const smallNote = `\n\n*Small archive: only ${total} ${note ? `${note} ` : ""}exam${total === 1 ? "" : "s"} on file — treat rankings as indicative.*`;
       if (intent === "TOPIC_WEIGHTAGE") {
         return respond({
           intent,
           subject,
-          answer: formatTopicWeightageAnswer(subject, topics, total, stats.topic_count) + (smallW ? smallNote : ""),
+          answer: formatTopicWeightageAnswer(subject, topics, total, stats.topic_count, note) + (smallW ? smallNote : ""),
           topics: topicsPayload,
           total_exams: total,
           topic_count: stats.topic_count,
           total_appearances: stats.total_appearances,
           ...(smallW ? { small_corpus: true } : {}),
+          ...(note ? { filters: { year, exam_type: examType } } : {}),
         });
       }
 
       // STUDY_GUIDE: Gemini writes the plan from the deterministic data.
       // The rarely-asked tail comes from the FULL distribution and is only
-      // provided when the student actually asks about skipping.
+      // provided when the student actually asks about skipping. It stays
+      // UNFILTERED on purpose: a topic that is rare in MSE but heavy in ESE
+      // must never surface as a skip candidate.
       const tail = isSkipQuery(question) ? await topicTail(subject, 10) : null;
       if (!consume(`synth:${client}`, synthLimit())) {
         logAsk({ status: 429, limited: "synth" });
@@ -386,10 +423,12 @@ export async function POST(req: Request) {
               intent: "TOPIC_WEIGHTAGE",
               answer:
                 "AI study plans are resting until tomorrow — here's the topic weightage to plan from instead.\n\n" +
-                formatTopicWeightageAnswer(subject, topics, total),
+                formatTopicWeightageAnswer(subject, topics, total, stats.topic_count, note),
               topics: topicsPayload,
               total_exams: total,
+              topic_count: stats.topic_count,
               degraded: true,
+              ...(note ? { filters: { year, exam_type: examType } } : {}),
             },
             false,
           );
@@ -443,6 +482,7 @@ export async function POST(req: Request) {
         topic_count: stats.topic_count,
         total_appearances: stats.total_appearances,
         ...(smallW ? { small_corpus: true } : {}),
+        ...(note ? { filters: { year, exam_type: examType } } : {}),
         ...(tail !== null
           ? { skip_candidates: tail.map((t) => ({ topic: t.topic, exam_count: t.exam_count })) }
           : {}),
@@ -543,20 +583,21 @@ export async function POST(req: Request) {
       // end in no-answer — worst case it gets the weightage ranking.
       if (/\b(important|topics?|questions?|study|repeated|weightage)\b/i.test(question)) {
         const [wTopics, wTotal, wStats] = await Promise.all([
-          topicWeightage(subject, 10),
-          totalExams(subject),
-          topicStats(subject),
+          topicWeightage(subject, 10, filters),
+          totalExams(subject, filters),
+          topicStats(subject, filters),
         ]);
         if (wTopics.length > 0) {
-          const questions = await topicQuestions(subject, wTopics.map((t) => t.topic));
+          const questions = await topicQuestions(subject, wTopics.map((t) => t.topic), 4, filters);
           return respond({
             intent: "TOPIC_WEIGHTAGE",
             subject,
-            answer: formatTopicWeightageAnswer(subject, wTopics, wTotal, wStats.topic_count),
+            answer: formatTopicWeightageAnswer(subject, wTopics, wTotal, wStats.topic_count, note),
             topics: wTopics.map((t) => ({ ...t, questions: questions.get(t.topic) ?? [] })),
             total_exams: wTotal,
             topic_count: wStats.topic_count,
             total_appearances: wStats.total_appearances,
+            ...(note ? { filters: { year, exam_type: examType } } : {}),
           });
         }
       }

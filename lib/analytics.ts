@@ -57,6 +57,20 @@ export const FILTER_SQL = (yearParam: string, examParam: string) =>
   ` AND (${yearParam}::text IS NULL OR p.year = ${yearParam})
     AND (${examParam}::text IS NULL OR UPPER(COALESCE(p.exam_type, '')) = ${examParam})`;
 
+/** Closest year on file to a requested year — for honest-empty offers
+ *  ("No 2025 papers — nearest on file is 2024"). */
+export function nearestYear(years: string[], target: string): string | null {
+  const t = Number(target);
+  if (!Number.isFinite(t)) return null;
+  let best: string | null = null;
+  for (const y of years) {
+    const n = Number(y);
+    if (!Number.isFinite(n)) continue;
+    if (best === null || Math.abs(n - t) < Math.abs(Number(best) - t)) best = y;
+  }
+  return best;
+}
+
 /** "MSE 2024" / "2024" / "ESE" — for headings and honest-empty messages. */
 export function filterLabel(filters: ExamFilters): string | null {
   const parts = [filters.examType, filters.year].filter(Boolean);

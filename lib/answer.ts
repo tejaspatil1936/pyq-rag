@@ -126,11 +126,12 @@ export function formatTopicWeightageAnswer(
   topics: TopicRow[],
   totalExams: number,
   topicCount: number | null = null,
+  filterNote: string | null = null,
 ): string {
   const [first, second, third] = topics;
   const parts: string[] = [];
   parts.push(
-    `**${first.topic}** leads — in **${first.exam_count}** of ${totalExams} exams${first.total_marks ? ` (${first.total_marks} marks total)` : ""}.`,
+    `**${first.topic}** leads — in **${first.exam_count}** of ${totalExams} ${filterNote ? `${filterNote} ` : ""}exams${first.total_marks ? ` (${first.total_marks} marks total)` : ""}.`,
   );
   if (second && third) {
     parts.push(

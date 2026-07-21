@@ -35,7 +35,11 @@ export async function totalExams(subject: string, filters: ExamFilters = {}): Pr
  * deterministic backbone of TOPIC_WEIGHTAGE and STUDY_GUIDE. Empty until
  * label_topics.py has run for the subject.
  */
-export async function topicWeightage(subject: string, limit = 10): Promise<TopicRow[]> {
+export async function topicWeightage(
+  subject: string,
+  limit = 10,
+  filters: ExamFilters = {},
+): Promise<TopicRow[]> {
   const res = await getPool().query(
     `SELECT c.topic,
             COUNT(DISTINCT ${EXAM_KEY_SQL})::int AS exam_count,
@@ -47,11 +51,11 @@ export async function topicWeightage(subject: string, limit = 10): Promise<Topic
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $1
-        AND c.topic IS NOT NULL
+        AND c.topic IS NOT NULL${FILTER_SQL("$3", "$4")}
       GROUP BY c.topic
       ORDER BY exam_count DESC, total_marks DESC NULLS LAST, c.topic
       LIMIT $2`,
-    [subject, limit],
+    [subject, limit, filters.year ?? null, filters.examType ?? null],
   );
   return (res.rows as (Omit<TopicRow, "years"> & { years: string[] | null })[]).map((r) => ({
     ...r,
@@ -63,6 +67,7 @@ export async function topicWeightage(subject: string, limit = 10): Promise<Topic
  *  topics exist and the sum of their per-topic exam appearances. */
 export async function topicStats(
   subject: string,
+  filters: ExamFilters = {},
 ): Promise<{ topic_count: number; total_appearances: number }> {
   const res = await getPool().query(
     `SELECT COUNT(*)::int AS topic_count,
@@ -72,10 +77,10 @@ export async function topicStats(
            FROM clusters c
            JOIN questions q ON q.cluster_id = c.id
            JOIN papers p ON p.id = q.paper_id
-          WHERE c.standard_subject = $1 AND c.topic IS NOT NULL
+          WHERE c.standard_subject = $1 AND c.topic IS NOT NULL${FILTER_SQL("$2", "$3")}
           GROUP BY c.topic
        ) t`,
-    [subject],
+    [subject, filters.year ?? null, filters.examType ?? null],
   );
   return res.rows[0];
 }
@@ -227,6 +232,7 @@ export async function topicQuestions(
   subject: string,
   topics: string[],
   perTopic = 4,
+  filters: ExamFilters = {},
 ): Promise<Map<string, TopicQuestion[]>> {
   const out = new Map<string, TopicQuestion[]>();
   if (topics.length === 0) return out;
@@ -238,10 +244,10 @@ export async function topicQuestions(
        JOIN questions q ON q.cluster_id = c.id
        JOIN papers p ON p.id = q.paper_id
       WHERE c.standard_subject = $1
-        AND c.topic = ANY($2)
+        AND c.topic = ANY($2)${FILTER_SQL("$3", "$4")}
       GROUP BY c.id, c.topic, c.representative_text
       ORDER BY exam_count DESC, c.id`,
-    [subject, topics],
+    [subject, topics, filters.year ?? null, filters.examType ?? null],
   );
   for (const row of res.rows as { topic: string; representative_text: string; exam_count: number }[]) {
     const list = out.get(row.topic) ?? [];
