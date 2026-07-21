@@ -258,11 +258,13 @@ export async function POST(req: Request) {
       const clusters = await topClusters(subject, TOP_K, filters);
       if (clusters.length === 0) {
         if (note) {
-          // The filter excluded everything — say so, and say what exists.
+          // The filter excluded everything — say so, offer the closest year
+          // on file, and never silently substitute another year.
           const years = await availableYears(subject);
+          const near = year ? nearestYear(years, year) : null;
           return respond({
             intent,
-            answer: `The archive has no **${subject}** ${note} papers, so there's nothing to count.${years.length > 0 ? ` Years available for this subject: ${years.join(", ")}.` : ""}`,
+            answer: `The archive has no **${subject}** ${note} papers, so there's nothing to count.${near ? ` Nearest year on file: ${near}.` : ""}${years.length > 0 ? ` Years available for this subject: ${years.join(", ")}.` : ""}`,
             clusters: [],
             filters: { year, exam_type: examType },
           });
@@ -511,12 +513,13 @@ export async function POST(req: Request) {
         const zeroLead = `**${topicPhrase}** appeared in **0** of ${total} ${subject} exams${note ? ` (${note} only)` : ""}.`;
         if (note) {
           const years = await availableYears(subject);
+          const near = year ? nearestYear(years, year) : null;
           return respond({
             intent,
             topic: topicPhrase,
             topic_exam_count: 0,
             total_exams: total,
-            answer: `${zeroLead} The archive may simply not have those papers.${years.length > 0 ? ` Years available: ${years.join(", ")}.` : ""}`,
+            answer: `${zeroLead} The archive may simply not have those papers.${near ? ` Nearest year on file: ${near}.` : ""}${years.length > 0 ? ` Years available: ${years.join(", ")}.` : ""}`,
             clusters: [],
             filters: { year, exam_type: examType },
           });
