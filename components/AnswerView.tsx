@@ -389,6 +389,9 @@ function ClusterItem({
                     >
                       {[known(s.year), known(s.exam_type)].filter(Boolean).join(" · ") || "PDF"} —{" "}
                       {s.file_name}
+                      {s.matches_filter === false && (
+                        <span className="ml-1 text-slate-500">· outside filter</span>
+                      )}
                     </a>
                   </li>
                 ))}

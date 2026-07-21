@@ -110,6 +110,9 @@ export interface PaperSource {
   year: string | null;
   exam_type: string | null;
   url: string;
+  /** Present only under an active filter: false = shown for context but
+   *  outside the requested year/exam type. */
+  matches_filter?: boolean;
 }
 
 /**
@@ -205,20 +208,26 @@ export interface ClusterSourceInfo {
 export async function clusterSources(
   clusterIds: number[],
   perCluster = 3,
+  filters: ExamFilters = {},
 ): Promise<Map<number, ClusterSourceInfo>> {
   const sources = new Map<number, ClusterSourceInfo>();
   if (clusterIds.length === 0) return sources;
+  const filtered = filters.year != null || filters.examType != null;
 
+  // Under a filter, matching papers rank first and non-matching ones are
+  // flagged so the UI can label them — never silently mixed in.
   const res = await getPool().query(
-    `SELECT DISTINCT q.cluster_id, p.file_name, p.year, p.exam_type, p.url
+    `SELECT DISTINCT q.cluster_id, p.file_name, p.year, p.exam_type, p.url,
+            (($2::text IS NULL OR p.year = $2)
+             AND ($3::text IS NULL OR UPPER(COALESCE(p.exam_type, '')) = $3)) AS matches_filter
        FROM questions q
        JOIN papers p ON p.id = q.paper_id
       WHERE q.cluster_id = ANY($1::int[])
-      ORDER BY p.year DESC NULLS LAST, p.file_name`,
-    [clusterIds],
+      ORDER BY matches_filter DESC, p.year DESC NULLS LAST, p.file_name`,
+    [clusterIds, filters.year ?? null, filters.examType ?? null],
   );
 
-  for (const row of res.rows as ({ cluster_id: number } & PaperSource)[]) {
+  for (const row of res.rows as ({ cluster_id: number; matches_filter: boolean } & PaperSource)[]) {
     const info = sources.get(row.cluster_id) ?? { list: [], total: 0 };
     info.total++;
     if (info.list.length < perCluster) {
@@ -227,6 +236,7 @@ export async function clusterSources(
         year: row.year,
         exam_type: row.exam_type,
         url: row.url,
+        ...(filtered ? { matches_filter: row.matches_filter } : {}),
       });
     }
     sources.set(row.cluster_id, info);

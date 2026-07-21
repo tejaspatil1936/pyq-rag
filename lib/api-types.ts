@@ -11,6 +11,8 @@ export interface PaperSource {
   year: string | null;
   exam_type: string | null;
   url: string;
+  /** Present only under an active filter: false = outside the filter. */
+  matches_filter?: boolean;
 }
 
 export interface ClusterResult {

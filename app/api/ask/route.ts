@@ -304,7 +304,7 @@ export async function POST(req: Request) {
         });
       }
       const [sources, analyticsTotal] = await Promise.all([
-        clusterSources(clusters.map((c) => c.cluster_id)),
+        clusterSources(clusters.map((c) => c.cluster_id), 3, filters),
         totalExams(subject, filters), // denominator for the coverage bars
       ]);
       const annotated = clusters.map(annotateCluster);
@@ -564,7 +564,7 @@ export async function POST(req: Request) {
       const ids = clusters.map((c) => c.cluster_id);
       const allIds = allClusters.map((c) => c.cluster_id);
       const [sources, topicExamCount, total] = await Promise.all([
-        clusterSources(ids),
+        clusterSources(ids, 3, filters),
         // Exam totals always aggregate over the FULL matched set, never
         // just the rows shown.
         label ? labelExamCount(subject, label, filters) : examCountForClusters(allIds, filters),

@@ -96,7 +96,10 @@ function formatClusterList(
       const more = src.total > src.list.length ? ` (+${src.total - src.list.length} more)` : "";
       lines.push(
         `   Sources: ${src.list
-          .map((s) => `[${[s.year, s.exam_type].filter(Boolean).join(" ") || s.file_name}](${s.url})`)
+          .map(
+            (s) =>
+              `[${[s.year, s.exam_type].filter(Boolean).join(" ") || s.file_name}](${s.url})${s.matches_filter === false ? " (outside filter)" : ""}`,
+          )
           .join(", ")}${more}`,
       );
     }
