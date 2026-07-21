@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   NUMBERED_REF,
+  UNRESOLVED_REF,
   classifyHeuristic,
   coerceClassification,
   isExhaustiveQuery,
@@ -209,6 +210,15 @@ describe("solve-intent routing and numbered references", () => {
     expect(NUMBERED_REF.exec("solve problem 12")?.[1]).toBe("12");
     expect(NUMBERED_REF.test("the question 2019 paper had")).toBe(false);
     expect(NUMBERED_REF.test("solve the subnetting numerical")).toBe(false);
+  });
+
+  it("UNRESOLVED_REF matches bare references only, never content queries", () => {
+    for (const q of ["explain this", "what about that?", "solve it", "this", "elaborate on that one."]) {
+      expect(UNRESOLVED_REF.test(q)).toBe(true);
+    }
+    for (const q of ["explain this algorithm", "solve it using recursion", "what is this pattern called"]) {
+      expect(UNRESOLVED_REF.test(q)).toBe(false);
+    }
   });
 
   it("resolveNumberedRef pulls item N from the latest assistant list", () => {

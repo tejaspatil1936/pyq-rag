@@ -39,6 +39,7 @@ import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import {
   NUMBERED_REF,
+  UNRESOLVED_REF,
   classifyIntent,
   coerceClassification,
   isExhaustiveQuery,
@@ -202,6 +203,21 @@ export async function POST(req: Request) {
     // Scope gate layer 0: obvious abuse dies here for free, before Gemini.
     if (prefilterAbuse(question)) {
       return respond({ intent: "REFUSED", answer: refusalMessage(subject) });
+    }
+
+    // A bare reference ("explain this", "what about that?") with no history
+    // has nothing to resolve against — ask, never substitute a guess.
+    if (history.length === 0 && UNRESOLVED_REF.test(question)) {
+      return respond(
+        {
+          intent: "SEMANTIC",
+          clarification: true,
+          answer:
+            "**What are you referring to?** I can't see an earlier answer to connect this to — name the topic or paste the question, and I'll take it from there.",
+          citations: [],
+        },
+        false,
+      );
     }
 
     // Scope gate layer 1 rides along in the intent-classification call; the

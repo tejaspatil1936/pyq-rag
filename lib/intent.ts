@@ -202,6 +202,12 @@ export function coerceClassification(cls: Classification, question: string): Cla
   return { ...cls, intent, topic };
 }
 
+/** The whole query is a bare reference ("explain this", "what about that?",
+ *  "solve it") — meaningless without history. Anchored so any query with
+ *  actual content ("explain this algorithm") never matches. */
+export const UNRESOLVED_REF =
+  /^(?:please\s+)?(?:explain|elaborate(?:\s+on)?|expand(?:\s+on)?|solve|simplify|summari[sz]e|tell\s+me\s+more\s+about|more\s+(?:about|on)|what\s+about)?\s*(?:this|that|it)\s*(?:one)?\s*[?.!]*$/i;
+
 /** "question 2" / "q3" / "problem 4" — a numbered reference to an earlier
  *  list. (?!\d) keeps 4-digit years ("question 2019 paper") out. */
 export const NUMBERED_REF = /\b(?:question|q|problem)\s*#?\s*(\d{1,2})(?!\d)\b/i;
