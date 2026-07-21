@@ -1,10 +1,12 @@
 import { describe, expect, it } from "vitest";
 
 import {
+  NUMBERED_REF,
   classifyHeuristic,
   coerceClassification,
   isExhaustiveQuery,
   isSkipQuery,
+  resolveNumberedRef,
   type Classification,
 } from "../lib/intent";
 
@@ -189,5 +191,39 @@ describe("classifyHeuristic", () => {
     "compare mesh and star topologies",
   ])("SEMANTIC: %s", (q) => {
     expect(classifyHeuristic(q).intent).toBe("SEMANTIC");
+  });
+});
+
+describe("solve-intent routing and numbered references", () => {
+  it("solving requests are coerced to SEMANTIC regardless of classifier drift", () => {
+    const q = "solve question 2 step by step";
+    expect(coerceClassification(cls({ intent: "ANALYTICS", solving: true }), q).intent).toBe("SEMANTIC");
+    expect(coerceClassification(cls({ intent: "TOPIC_WEIGHTAGE", solving: true }), q).intent).toBe(
+      "SEMANTIC",
+    );
+  });
+
+  it("NUMBERED_REF matches question/q/problem N but never 4-digit years", () => {
+    expect(NUMBERED_REF.exec("solve question 2 step by step")?.[1]).toBe("2");
+    expect(NUMBERED_REF.exec("work through q3 for me")?.[1]).toBe("3");
+    expect(NUMBERED_REF.exec("solve problem 12")?.[1]).toBe("12");
+    expect(NUMBERED_REF.test("the question 2019 paper had")).toBe(false);
+    expect(NUMBERED_REF.test("solve the subnetting numerical")).toBe(false);
+  });
+
+  it("resolveNumberedRef pulls item N from the latest assistant list", () => {
+    const history = [
+      { role: "user" as const, content: "most repeated questions" },
+      {
+        role: "assistant" as const,
+        content:
+          'Top questions:\n\n1. "Define hash function and collision." — asked in **9** exams (2019–2024)\n2. "Explain linear probing with example." — asked in **7** exams\n3. **Construct a B+ tree** — asked in **5** exams',
+      },
+    ];
+    expect(resolveNumberedRef(history, 1)).toBe("Define hash function and collision.");
+    expect(resolveNumberedRef(history, 2)).toBe("Explain linear probing with example.");
+    expect(resolveNumberedRef(history, 3)).toBe("Construct a B+ tree");
+    expect(resolveNumberedRef(history, 7)).toBeNull();
+    expect(resolveNumberedRef([], 1)).toBeNull();
   });
 });

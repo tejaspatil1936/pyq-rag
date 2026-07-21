@@ -38,10 +38,12 @@ import {
 import { embedQuery } from "@/lib/embed";
 import { GeminiUnavailable } from "@/lib/gemini";
 import {
+  NUMBERED_REF,
   classifyIntent,
   coerceClassification,
   isExhaustiveQuery,
   isSkipQuery,
+  resolveNumberedRef,
   type HistoryTurn,
 } from "@/lib/intent";
 import { normalizeQuery } from "@/lib/normalize";
@@ -574,7 +576,27 @@ export async function POST(req: Request) {
     // SEMANTIC: embed the query, then pgvector search *already* scoped to the
     // subject in SQL — the LLM only ever sees same-subject questions. The
     // classifier's standalone rewrite makes follow-ups searchable.
-    const searchQuery = rewritten ?? question;
+    let searchQuery = rewritten ?? question;
+    // "solve question 2": if the rewrite left the numbered reference
+    // unresolved, resolve it against the last numbered list in the history —
+    // and when there's nothing to resolve against, ask rather than guess.
+    const numRef = NUMBERED_REF.exec(searchQuery);
+    if (numRef) {
+      const resolved = resolveNumberedRef(history, Number(numRef[1]));
+      if (resolved) {
+        searchQuery = resolved;
+      } else {
+        return respond(
+          {
+            intent: "SEMANTIC",
+            clarification: true,
+            answer: `**Which question do you mean?** I can't see a list to match "question ${numRef[1]}" against — paste the question text${solving ? " and I'll work through it" : ""}, or ask again right after the answer that listed it.`,
+            citations: [],
+          },
+          false,
+        );
+      }
+    }
     const queryVec = await embedQuery(searchQuery);
     const hits = await semanticSearch(subject, queryVec, TOP_K);
 

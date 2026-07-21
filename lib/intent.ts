@@ -57,7 +57,7 @@ TOPIC_ANALYTICS — what or how often things are asked about one SPECIFIC named 
 SEMANTIC — everything else: explain, understand, compare, answer content.
 
 Also produce:
-"rewritten": the question restated as a standalone query, resolving references like "the second one" using the conversation; identical to the question when no context is needed.
+"rewritten": the question restated as a standalone query, resolving references using the conversation — "the second one" or "question 3" means the 3rd item of the numbered list in the previous answer; substitute the actual question text. Identical to the question when no context is needed.
 "top_n": the integer if the student asked for a specific number of topics/questions ("5 important topics" -> 5), else null.
 "solving": true only when the student wants a specific exam problem solved or worked through step by step.
 "predictive": true when the student asks to predict, forecast, or guess what will come in the upcoming/this year's paper ("predict what will come this year", "what will they ask").
@@ -196,7 +196,33 @@ export function coerceClassification(cls: Classification, question: string): Cla
       topic = extracted;
     }
   }
+  // A solve request is a content request, never a frequency list — "solve
+  // question 2 step by step" must reach retrieval + synthesis.
+  if (cls.solving && intent !== "SEMANTIC") intent = "SEMANTIC";
   return { ...cls, intent, topic };
+}
+
+/** "question 2" / "q3" / "problem 4" — a numbered reference to an earlier
+ *  list. (?!\d) keeps 4-digit years ("question 2019 paper") out. */
+export const NUMBERED_REF = /\b(?:question|q|problem)\s*#?\s*(\d{1,2})(?!\d)\b/i;
+
+/**
+ * Deterministic resolution of "question N" against the most recent numbered
+ * list in the assistant's history — the backstop for when the classifier's
+ * rewrite leaves the reference unresolved.
+ */
+export function resolveNumberedRef(history: HistoryTurn[], n: number): string | null {
+  for (let i = history.length - 1; i >= 0; i--) {
+    if (history[i].role !== "assistant") continue;
+    const m = new RegExp(`^\\s*${n}[.)]\\s+(.+)$`, "m").exec(history[i].content);
+    if (!m) continue;
+    let t = m[1].trim();
+    const quoted = /^["“](.+?)["”]/.exec(t);
+    if (quoted) return quoted[1];
+    t = t.replace(/\*\*/g, "").split(/\s+—\s+/)[0].trim();
+    return t || null;
+  }
+  return null;
 }
 
 /**
